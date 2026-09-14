@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-boundary-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Enforce FlowForge domain boundary
+        run: |
+          if grep -RniE 'transformer|technician|shutdown permit' flowforge-engine/src; then
+            echo 'Domain-specific terms found inside flowforge-engine.'
+            exit 1
+          fi
+
+      - name: Build
+        run: mvn -B -DskipTests package
