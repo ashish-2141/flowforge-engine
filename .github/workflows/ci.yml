@@ -22,10 +22,11 @@ jobs:
 
       - name: Enforce FlowForge domain boundary
         run: |
-          if grep -RniE 'transformer|technician|shutdown permit' flowforge-engine/src; then
+          if grep -RniE 'transformer|technician|shutdown[ _-]?permit' flowforge-engine \
+            --exclude-dir=target --exclude='*.class'; then
             echo 'Domain-specific terms found inside flowforge-engine.'
             exit 1
           fi
 
-      - name: Build
-        run: mvn -B -DskipTests package
+      - name: Verify build and tests
+        run: mvn -B verify
