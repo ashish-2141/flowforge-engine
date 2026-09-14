@@ -48,16 +48,14 @@ The engine module must not contain electrical-domain terms. CI enforces this bou
 - RabbitMQ
 - Docker Compose
 
-Spring Boot 4.1.1 is a current stable release as of September 2026. Java 21 is the project target required by the assignment.
-
 ## Run locally
 
 ```bash
-./mvnw clean verify
+mvn clean verify
 
 docker compose up -d
 
-./mvnw -pl flowforge-engine spring-boot:run
+mvn -pl flowforge-engine spring-boot:run
 ```
 
 The Week 1 application is intentionally minimal. Supporting services are included for later implementation stages.
