@@ -2,13 +2,13 @@
 
 Fault-tolerant distributed workflow orchestration platform built with Java 21 and Spring Boot.
 
-FlowForge is a domain-independent orchestration engine. VoltOps is the reference application used to demonstrate the engine with an outage-aware electrical-maintenance workflow.
+FlowForge is a domain-independent orchestration engine. VoltOps is a domain-specific reference module used to demonstrate FlowForge with an outage-aware electrical-maintenance workflow.
 
 ## Week 1 status
 
-Week 1 is a discovery and system-design phase. Production workflow execution is intentionally not implemented yet.
+Week 1 is a discovery and system-design phase. Production workflow execution is intentionally not implemented.
 
-The Week 1 design is built around durable state, atomic task claiming, leases, fencing tokens, idempotency, transactional outbox delivery, and restart recovery.
+The design focuses on durable state, atomic task claiming, worker sessions, leases, fencing generations, idempotency, retry semantics, transactional outbox delivery, and restart recovery.
 
 ## Deliverables
 
@@ -24,48 +24,73 @@ The Week 1 design is built around durable state, atomic task claiming, leases, f
 
 ```text
 flowforge-engine/
-├── flowforge-engine/       # Domain-independent engine
-├── voltops-reference/      # Domain-specific reference application
-├── docs/                   # Week 1 design artifacts
-├── .github/workflows/      # CI checks
-├── docker-compose.yml      # Local supporting services
-├── pom.xml                # Maven multi-module build
+├── flowforge-engine/          # reusable domain-independent library
+├── voltops-reference/         # domain-specific library / adapter
+├── flowforge-application/     # sole executable Spring Boot application
+├── docs/                      # Week 1 design artifacts
+├── .github/workflows/         # CI checks
+├── docker-compose.yml         # PostgreSQL and RabbitMQ
+├── mvnw                       # Maven wrapper entry point
+├── pom.xml                    # Maven multi-module parent
 └── README.md
 ```
 
-## Design boundary
+## Deployment model
 
-The `flowforge-engine` module owns workflow definitions, DAG validation, task state, worker coordination, leases, fencing, retries, idempotency, outbox delivery, and crash recovery.
-
-The `voltops-reference` module owns electrical-maintenance concepts such as transformer maintenance, shutdown approvals, spare parts, technician assignment, inspections, testing, and power restoration.
-
-The FlowForge module must remain domain-independent. CI checks the module for forbidden electrical-domain terms.
-
-## Architecture at a glance
+The initial architecture is a modular monolith with one executable Spring Boot process:
 
 ```text
-Workflow Client / VoltOps
-          |
-          v
-    FlowForge API
-          |
-    Workflow Coordinator
-          |
-   +------+------+
-   |             |
-   v             v
-PostgreSQL    Workers
-   |
-   +--> Outbox Publisher --> RabbitMQ
+flowforge-application
+    |\
+    | +--> PostgreSQL
+    |
+    +----> RabbitMQ
+
+worker-1 -----> flowforge-application
+worker-2 -----> flowforge-application
+worker-3 -----> flowforge-application
 ```
 
-PostgreSQL is the durable source of truth. RabbitMQ provides delivery. Duplicate delivery is expected and handled through idempotency. Stale worker results are rejected through fencing-token validation.
+`flowforge-engine` is a reusable library. `voltops-reference` is a domain library/adapter. `flowforge-application` is the sole executable module.
+
+## Design boundary
+
+The engine owns domain-independent orchestration semantics such as workflow definitions, task definitions and instances, dependency validation, worker sessions, leases, fencing, retries, idempotency, outbox records, and recovery.
+
+VoltOps owns electrical-maintenance concepts and remains outside the reusable engine module.
+
+The engine module must not contain electrical-domain terms. CI enforces this boundary.
+
+## Ownership model
+
+Workers acquire tasks through capability-based API polling backed by PostgreSQL.
+
+RabbitMQ is not the ownership mechanism. It carries asynchronous workflow and domain events after durable state changes.
+
+A task result is accepted only when task ID, worker session ID, lease ID, fencing generation, current task state, and lease validity match current durable ownership.
+
+## Failure model
+
+The design explicitly handles:
+
+- concurrent claims
+- worker failure before or during execution
+- lease expiry and reassignment
+- stale worker results
+- duplicate message delivery
+- uncertain external side effects
+- outbox publish-before-mark crashes
+- broker unavailability
+- orchestrator restart
+- task timeout
+- retry exhaustion
+- concurrent recovery schedulers
 
 ## Technology
 
 - Java 21
 - Spring Boot 4.1.1
-- Maven
+- Maven 3.9.9
 - PostgreSQL
 - RabbitMQ
 - Docker Compose
@@ -73,14 +98,18 @@ PostgreSQL is the durable source of truth. RabbitMQ provides delivery. Duplicate
 ## Run locally
 
 ```bash
-mvn clean verify
-
+chmod +x mvnw
+./mvnw clean verify
 docker compose up -d
-
-mvn -pl flowforge-engine spring-boot:run
 ```
 
-To stop supporting services:
+Run the executable application with:
+
+```bash
+./mvnw -pl flowforge-application spring-boot:run
+```
+
+Stop supporting services with:
 
 ```bash
 docker compose down
@@ -93,29 +122,21 @@ GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
 CI performs:
 
 1. Java 21 setup.
-2. FlowForge domain-boundary check.
-3. Full Maven verification with tests.
-
-## Failure scenarios
-
-The design addresses:
-
-- concurrent task claiming
-- worker crash before execution
-- worker crash during execution
-- stale worker returning after reassignment
-- duplicate message delivery
-- database commit followed by broker failure
-- broker unavailability
-- orchestrator restart
-- task timeout
-- retry exhaustion
+2. Module dependency-direction enforcement.
+3. Executable-boundary enforcement.
+4. Forbidden-domain-term check inside `flowforge-engine`.
+5. `./mvnw -B clean verify`.
+6. Docker Compose configuration validation.
 
 ## Week 1 scope
 
-Week 1 excludes production task execution, lease implementation, retry implementation, outbox publisher implementation, frontend dashboard, metrics infrastructure, Kubernetes, and cloud deployment.
+Week 1 excludes production task execution, worker lease implementation, retry implementation, production outbox publishing, frontend dashboard, metrics infrastructure, Kubernetes, and cloud deployment.
 
-Implementation begins only after the design review gate is approved.
+Implementation begins only after the design-review gate is approved.
+
+## Review preparation
+
+The design review must be defendable without reading from the documents. Be prepared to explain task claiming, lease expiry, fencing, duplicate delivery, external side effects, outbox crash windows, recovery races, definition-versus-instance modeling, and the PostgreSQL/RabbitMQ responsibility boundary.
 
 ## License
 
