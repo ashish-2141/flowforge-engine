@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document records the Week 1 repository and development-environment baseline. It intentionally contains no production workflow-execution logic.
+This document records the Week 1 repository and development-environment baseline. It contains no production workflow-execution logic.
 
 ## Repository structure
 
@@ -20,7 +20,7 @@ flowforge-engine/
 ├── docs/                      # Week 1 design documents
 ├── .github/workflows/         # CI and boundary checks
 ├── docker-compose.yml         # PostgreSQL and RabbitMQ
-├── mvnw                       # Maven wrapper entry point
+├── mvnw                       # portable Maven wrapper
 ├── pom.xml                    # Maven parent and module declarations
 ├── README.md
 └── LICENSE
@@ -38,8 +38,7 @@ Dependency direction:
 
 ```text
 voltops-reference -----> flowforge-engine
-          ^
-          |
+
 flowforge-application -----> flowforge-engine
         |
         +--------------------> voltops-reference
@@ -49,7 +48,7 @@ The engine module must never depend on VoltOps.
 
 ## Deployment model
 
-The initial system is a modular monolith:
+The initial design is a modular monolith:
 
 ```text
 flowforge-application
@@ -63,8 +62,6 @@ worker-3 -----> flowforge-application
 ```
 
 There is one executable Spring Boot process. Workers remain separate processes because task execution is distributed. VoltOps is loaded as a domain library/adapter, not deployed as a second application.
-
-This removes the earlier contradiction between multiple Spring Boot entry points and the single-deployment modular-monolith decision.
 
 ## Spring Boot baseline
 
@@ -83,25 +80,31 @@ Docker Compose provides:
 
 RabbitMQ is not the task-ownership mechanism. Workers acquire ownership through capability-based API polling backed by PostgreSQL.
 
-Both services include container health checks.
+Both services have health checks.
 
-## Local setup
+## Local clean-clone verification
 
-On a clean clone:
+From a fresh clone:
 
 ```bash
-chmod +x mvnw
 ./mvnw clean verify
-docker compose up -d
+docker compose up -d --wait
+docker compose ps
 ```
 
-Run the executable application with:
+The Maven wrapper has executable mode in Git. It uses an installed Maven binary when present and otherwise bootstraps Maven 3.9.9.
+
+Run the application with:
 
 ```bash
 ./mvnw -pl flowforge-application spring-boot:run
 ```
 
-The Week 1 baseline does not execute production workflows.
+Stop dependencies with:
+
+```bash
+docker compose down -v
+```
 
 ## CI verification
 
@@ -112,23 +115,27 @@ CI checks:
 1. Java 21 is configured.
 2. Module dependency direction is enforced.
 3. Only `flowforge-application` has the Spring Boot packaging plugin.
-4. The entire `flowforge-engine` module is scanned for forbidden electrical-domain terms.
-5. `./mvnw -B clean verify` runs compilation and tests.
-6. Docker Compose syntax is validated.
+4. `flowforge-engine` is scanned for forbidden electrical-domain terms.
+5. `./mvnw -B clean verify` runs the multi-module build and tests.
+6. Docker Compose starts with `--wait` and health status is displayed.
+7. Docker Compose is torn down even after failures.
 
-## Evidence to retain for design review
+## Review evidence
 
-The reviewer-requested evidence is:
+The design-review checklist asks for clean-clone build evidence, healthy supporting services, CI execution, module-dependency enforcement, forbidden-term enforcement, meaningful history, and proof that production orchestration logic has not started.
 
-- clean-clone build using `./mvnw clean verify`
-- successful Docker Compose startup with healthy PostgreSQL and RabbitMQ containers
-- successful GitHub Actions execution
-- demonstrated module dependency enforcement
-- demonstrated forbidden-domain-term check
-- meaningful commit history
-- confirmation that no production orchestration logic was introduced before approval
+Repository evidence now includes:
 
-The design-review environment should record the command output or CI run URL for each item. This repository contains the checks and commands; external execution evidence must come from the actual environment in which the clone is tested.
+- three-module Maven structure
+- executable wrapper
+- CI module-dependency check
+- CI executable-boundary check
+- CI forbidden-domain-term check
+- CI `clean verify`
+- Docker health checks and CI startup verification
+- explicit Week 1 scope exclusions
+
+The exact CI run URL and local command output should be attached to the design-review notes after the current revision's CI run completes.
 
 ## Week 1 scope boundary
 
@@ -139,13 +146,7 @@ Included:
 - Spring Boot application baseline
 - Docker Compose
 - README and setup instructions
-- Problem discovery
-- Architecture proposal
-- Data-model proposal
-- State-machine proposal
-- Failure analysis
-- Technology decisions
-- Repository bootstrap
+- seven Week 1 design/bootstrap artifacts
 - CI boundary and build checks
 
 Excluded:
@@ -153,10 +154,10 @@ Excluded:
 - production task execution
 - worker lease implementation
 - retry implementation
-- production outbox publisher implementation
+- production outbox publishing
 - frontend dashboard
 - metrics infrastructure
 - Kubernetes deployment
 - cloud deployment
 
-These exclusions preserve the design-review gate.
+Implementation remains behind the design-review gate.
