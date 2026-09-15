@@ -129,11 +129,11 @@ CI performs:
 6. Docker Compose startup with health checks.
 7. Docker Compose cleanup.
 
-## Current revision validation
+## Current validation
 
-The latest revision's CI run has already completed the Maven build and test phase successfully. The module dependency check, executable-boundary check, and forbidden-domain-term check also passed in that run. The infrastructure-health stage runs after those checks.
+The most recent CI run visible during this revision passed the Maven build and test phase, plus module dependency, executable-boundary, and domain-boundary checks. Docker health verification was also added to the workflow and remains part of the final gate.
 
-The current revision is suitable for the design-review phase once the final CI run is green.
+A fresh local clone is still required as reviewer evidence. The current model environment cannot perform the outbound Git clone itself.
 
 ## Week 1 scope
 
