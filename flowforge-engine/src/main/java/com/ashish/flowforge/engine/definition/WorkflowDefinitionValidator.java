@@ -45,8 +45,7 @@ public final class WorkflowDefinitionValidator {
                 if (!keys.contains(dep)) errors.add(new ValidationError("MISSING_DEPENDENCY", "Task '" + safe(task.taskKey()) + "' depends on an unknown task.", Map.of("taskKey", safe(task.taskKey()), "missingTaskKey", dep)));
             }
         }
-        boolean graphErrors = errors.stream().anyMatch(e -> Set.of("DUPLICATE_TASK_KEY", "MISSING_DEPENDENCY", "SELF_DEPENDENCY").contains(e.code()));
-        if (!graphErrors) dagValidator.findCycle(input.tasks()).ifPresent(cycle -> errors.add(new ValidationError("WORKFLOW_CYCLE_DETECTED", "The workflow contains a dependency cycle.", Map.of("cycle", cycle))));
+        if (errors.isEmpty()) dagValidator.findCycle(input.tasks()).ifPresent(cycle -> errors.add(new ValidationError("WORKFLOW_CYCLE_DETECTED", "The workflow contains a dependency cycle.", Map.of("cycle", cycle))));
         return errors;
     }
 
