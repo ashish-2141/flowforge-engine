@@ -1,59 +1,63 @@
 # DAG Validation
 
-## Algorithm
+## Goal
 
-FlowForge uses Kahn's topological-sort test to determine whether the dependency graph is acyclic. The validator also runs an iterative depth-first walk when Kahn detects a cycle, so the API can report one concrete cycle path without relying on recursive call-stack depth.
+A workflow definition is valid only when every dependency points to an existing task, no task depends on itself, duplicate dependency edges are absent, and the directed graph contains no cycle.
 
-For each task definition, the graph contains an edge from the task to each prerequisite listed in `dependsOn`.
+## Implemented algorithm
+
+FlowForge uses Kahn's topological-sort test for the acyclic check. When Kahn's pass detects a cycle, the implementation runs an iterative depth-first traversal to recover one concrete cycle path for the API error.
+
+The graph is represented as `task -> prerequisites`, matching the `dependsOn` field in the request model. Because the implementation treats prerequisites as outgoing graph edges, Kahn's indegree bookkeeping removes nodes whose prerequisite-side count reaches zero. This still gives the required cycle test because every edge is processed exactly once.
 
 ## Pseudocode
 
 ```text
 validate(tasks):
   validate task keys, dependencies and local fields
-  if any structural error exists: return errors
+  reject structural errors before DAG analysis
 
-  build adjacency map task -> prerequisites
-  compute indegree for every node
+  graph = task -> list of dependencies
+  indegree[node] = number of incoming graph edges
   enqueue every node with indegree 0
 
   processed = 0
   while queue is not empty:
       node = dequeue()
       processed++
-      for prerequisite in adjacency[node]:
-          indegree[prerequisite]--
-          if indegree[prerequisite] == 0:
-              enqueue(prerequisite)
+      for dependency in graph[node]:
+          indegree[dependency]--
+          if indegree[dependency] == 0:
+              enqueue(dependency)
 
-  if processed == number_of_nodes:
+  if processed == number of nodes:
       accept graph
   else:
-      cycle = iterativeDfsCyclePath(adjacency)
+      cycle = iterative DFS cycle-path recovery
       reject with WORKFLOW_CYCLE_DETECTED and cycle
 ```
 
 ## Complexity
 
-Let V be the number of task definitions and E be the number of dependency edges.
+Let V be the number of tasks and E be the number of dependency edges.
 
-- Building the adjacency structure: O(V + E).
-- Kahn's topological-sort pass: O(V + E).
-- Iterative DFS path recovery when a cycle exists: O(V + E).
-- Total worst-case time: O(V + E).
-- Space: O(V + E).
+- Graph construction: O(V + E).
+- Kahn pass: O(V + E).
+- Iterative DFS path recovery: O(V + E) in the cycle case.
+- Overall worst-case time: O(V + E).
+- Additional graph, queue, color, stack, and path storage: O(V + E).
 
-The two passes remain linear. The maximum-task limit is 1000 in Week 2, so the graph is bounded.
+The validator also limits a workflow to 1000 tasks.
 
-## Why Kahn works
+## Why Kahn detects a cycle
 
-A directed acyclic graph always has at least one node with indegree zero. Removing such nodes repeatedly eventually removes every node. If some nodes remain, they belong to a cyclic dependency region.
+In an acyclic graph, repeated removal of zero-indegree nodes eventually processes every node. When processing stops early, at least one cyclic region remains. The implementation then recovers a concrete cycle path instead of returning only a boolean failure.
 
-FlowForge validates missing dependencies and self-dependencies before the cycle pass. Multiple root tasks are valid.
+Missing dependencies and self-dependencies are validated before cycle analysis. Multiple roots are allowed.
 
 ## Cycle reporting
 
-Example:
+Example response details:
 
 ```json
 {
@@ -70,11 +74,11 @@ Example:
 }
 ```
 
-The returned path starts at a repeated node and ends at the same node, making the cycle visible to the caller.
+The iterative DFS uses a color state of `0 = unvisited`, `1 = active`, and `2 = completed`. Finding an edge to an active node identifies a back edge. The active path is sliced from the repeated node and closed by appending the repeated node again.
 
 ## Invalid examples
 
-Direct cycle:
+Self-dependency:
 
 ```text
 A -> A
@@ -95,29 +99,42 @@ B depends on A
 C depends on B
 ```
 
-Other graph errors are reported before cycle analysis:
+Other structural DAG errors:
 
-- duplicate task key
-- missing dependency
-- self-dependency
+```text
+A depends on missing-task
+```
+
+```text
+A depends on B
+A depends on B
+```
 
 ## Valid examples
 
-Linear:
+Linear DAG:
 
 ```text
-A -> B -> C
+A
+|
+v
+B
+|
+v
+C
 ```
 
 Parallel branches:
 
 ```text
-      -> B ->
-A              D
-      -> C ->
+    B
+   /
+  A
+   \
+    C
 ```
 
-Multiple roots are accepted:
+Multiple roots are valid:
 
 ```text
 A     B
@@ -125,6 +142,12 @@ A     B
    C
 ```
 
-## Recursion risk
+## Recursion depth
 
-Cycle path reporting uses an explicit stack rather than recursive DFS. A workflow with many tasks therefore does not consume the Java thread stack during cycle reporting.
+Cycle-path recovery is iterative. It uses an explicit stack of frames, so a long workflow does not consume the Java call stack through recursive DFS.
+
+## Test coverage in the repository
+
+`WorkflowDefinitionValidatorTest` covers linear DAG acceptance, parallel and multiple-root acceptance, missing dependencies, self-dependencies, a two-task cycle with an asserted cycle path, and an indirect cycle. fileciteturn15file0L2-L6
+
+The repository also contains the Week 2 integration test suite using PostgreSQL Testcontainers. Test execution was not run in this environment because the repository could not be cloned through the container network, so the documentation records test presence rather than claiming a fresh local pass. fileciteturn16file0L2-L6
