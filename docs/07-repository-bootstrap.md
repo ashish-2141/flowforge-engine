@@ -92,7 +92,7 @@ docker compose up -d --wait
 docker compose ps
 ```
 
-The Maven wrapper falls back to Maven 3.9.9 when a system Maven binary is unavailable.
+The Maven wrapper uses an installed Maven binary when present and otherwise bootstraps Maven 3.9.9.
 
 Run the application with:
 
@@ -121,13 +121,23 @@ CI checks:
 7. Container state is displayed with `docker compose ps`.
 8. Dependencies are cleaned up with `docker compose down -v` even after a failure.
 
-## Current evidence
+## Evidence status
 
-The latest CI run has passed the Maven verification phase plus module dependency, executable-boundary, and FlowForge domain-boundary checks. The infrastructure-health portion is executed afterward.
+The revision includes the repository-side evidence mechanisms requested by the review checklist:
 
-Local clean-clone evidence should be captured from a real fresh checkout because the execution environment used for design work does not have outbound Git access. The repository itself contains the wrapper, CI checks, and health-check configuration needed for that verification.
+- three-module Maven structure
+- executable Maven wrapper
+- module dependency-direction check
+- executable-boundary check
+- forbidden-domain-term check
+- full `clean verify` build
+- Docker health checks and CI startup validation
+- explicit Week 1 scope exclusions
+- separate design-defence guide
 
-The commit history contains separate changes for documentation, CI, infrastructure, and the module-structure refactor, providing a reviewable implementation trail.
+The fresh-clone command and Docker startup must still be run in an environment with Docker and outbound network access. The current model environment cannot perform that external clone itself.
+
+The repository has a reviewable commit history with separate documentation, CI, infrastructure, and architecture/module-structure changes.
 
 ## Week 1 scope boundary
 
