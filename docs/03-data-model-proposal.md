@@ -2,7 +2,7 @@
 
 ## 1. Modeling goals
 
-The data model must preserve the distinction between what a workflow is and an execution of that workflow, between what a task is and one execution attempt, and between the current ownership state and historical ownership records.
+The data model must preserve the distinction between what a workflow is and an execution of that workflow, between what a task is and one execution attempt, and between current ownership state and historical ownership records.
 
 The model must support:
 
@@ -56,17 +56,17 @@ UNIQUE(workflow_key, version)
 A referenced version is immutable.
 ```
 
-A workflow instance references exactly one immutable definition version.
+A workflow instance references exactly one immutable workflow-definition version.
 
 ### task_definition
 
 ```text
 task_definition_id          PK
 workflow_definition_id       FK -> workflow_definition
-                    task_key
+task_key
 required_capability
-retry_policy_id             FK -> retry_policy
-position / metadata
+retry_policy_id              FK -> retry_policy
+metadata
 ```
 
 Constraint:
@@ -80,8 +80,7 @@ A task definition describes a unit of work inside a workflow definition. It does
 ### task_dependency
 
 ```text
-workflow_definition_id       FK -> workflow_definition
-task_definition_id           FK -> task_definition
+task_definition_id            FK -> task_definition
 depends_on_task_definition_id FK -> task_definition
 ```
 
@@ -130,8 +129,6 @@ task_definition_id           FK -> task_definition
 state
 authoritative_fencing_generation
 next_eligible_at
-current_lease_id             nullable reference to current lease history row
-current_attempt_id           nullable reference to task_attempt
 result_ref                   nullable
 error_code                   nullable
 created_at
@@ -146,7 +143,7 @@ authoritative_fencing_generation is monotonic per task instance.
 The task instance owns the authoritative current fencing generation.
 ```
 
-The current lease is a convenience pointer only. Historical lease records remain in `task_lease_history`.
+The current active lease is derived from `task_lease_history` rather than stored as a foreign key on `task_instance`. This avoids a circular ownership reference between task and lease.
 
 ### task_attempt
 
@@ -154,13 +151,13 @@ The current lease is a convenience pointer only. Historical lease records remain
 task_attempt_id              PK
 task_instance_id             FK -> task_instance
 attempt_number
-outcome                       PENDING / SUCCEEDED / FAILED / TIMED_OUT / LEASE_LOST
-worker_session_id             FK -> worker_session, nullable
+outcome                      SUCCEEDED / FAILED / TIMED_OUT / LEASE_LOST
+worker_session_id            FK -> worker_session, nullable
 fencing_generation
-started_at                    nullable
-ended_at                      nullable
-error_code                    nullable
-error_details                 nullable
+started_at                   nullable
+ended_at                     nullable
+error_code                   nullable
+error_details                nullable
 ```
 
 Constraint:
@@ -174,12 +171,12 @@ Every execution attempt gets a durable history row. An attempt outcome is histor
 ### worker_session
 
 ```text
-worker_session_id             PK
-worker_id                     logical worker identity
+worker_session_id            PK
+worker_id                    logical worker identity
 session_status
 registered_at
 last_heartbeat_at
-expires_at                    nullable
+expires_at                   nullable
 ```
 
 A logical worker identity may have many sessions over time. A process restart creates a new `worker_session_id`.
@@ -187,7 +184,7 @@ A logical worker identity may have many sessions over time. A process restart cr
 ### worker_capability
 
 ```text
-worker_session_id             FK -> worker_session
+worker_session_id            FK -> worker_session
 capability_key
 created_at
 ```
@@ -203,14 +200,14 @@ Capabilities describe what the current worker session is eligible to execute.
 ### task_lease_history
 
 ```text
-lease_id                      PK
-task_instance_id              FK -> task_instance
-worker_session_id             FK -> worker_session
+lease_id                     PK
+task_instance_id             FK -> task_instance
+worker_session_id            FK -> worker_session
 fencing_generation
 acquired_at
 expires_at
-released_at                   nullable
-release_reason                nullable
+released_at                  nullable
+release_reason               nullable
 ```
 
 A lease is historical. The row is never overwritten to represent a later owner.
@@ -222,10 +219,12 @@ At most one unexpired active lease exists for a task instance.
 A fencing_generation is unique per task instance ownership generation.
 ```
 
+The current lease is derived by querying the active lease-history row for the task instance. Task ownership is therefore represented in one direction only: lease history references the task instance.
+
 ### retry_policy
 
 ```text
-retry_policy_id               PK
+retry_policy_id              PK
 version
 max_attempts
 backoff_type
@@ -241,24 +240,24 @@ UNIQUE(retry_policy_id, version)
 Referenced policy versions are immutable.
 ```
 
-A running task instance continues using the policy version resolved when its definition version was created.
+A running task instance continues using the policy version resolved by its immutable task definition.
 
 ### idempotency_record
 
 ```text
-idempotency_record_id         PK
+idempotency_record_id        PK
 tenant_id / application_id    scope field
 workflow_instance_id         nullable FK -> workflow_instance
 operation_type
 idempotency_key
 request_hash
 status
-outcome_ref                   nullable
+outcome_ref                  nullable
 created_at
-completed_at                  nullable
+completed_at                 nullable
 ```
 
-The effective uniqueness boundary is scoped:
+Effective uniqueness boundary:
 
 ```text
 UNIQUE(tenant_id, application_id, operation_type, idempotency_key)
@@ -269,16 +268,16 @@ A repeated key with the same request hash maps to the existing logical operation
 ### outbox_event
 
 ```text
-outbox_event_id               PK
+outbox_event_id              PK
 aggregate_type
 aggregate_id
 event_type
 payload
 created_at
 publish_attempts
-publish_claim_id              nullable
+publish_claim_id             nullable
 publish_claim_expires_at     nullable
-published_at                  nullable
+published_at                 nullable
 last_error                   nullable
 ```
 
@@ -356,10 +355,10 @@ One transaction must:
 1. select an eligible task instance
 2. verify current state and eligibility
 3. verify the worker session and capability
-4. create a new lease-history row
+4. read or lock the current active lease state
 5. increment the task instance's authoritative fencing generation
-6. create the task attempt if the attempt starts at claim
-7. update current ownership pointers
+6. create a new lease-history row
+7. create the task attempt record
 
 Concurrent claimers therefore produce one valid ownership generation.
 
