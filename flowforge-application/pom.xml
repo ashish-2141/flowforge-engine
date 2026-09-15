@@ -9,6 +9,9 @@
     <artifactId>flowforge-application</artifactId>
     <name>FlowForge Application</name>
     <description>Sole executable application for workflow definition management</description>
+    <properties>
+        <testcontainers.version>1.21.3</testcontainers.version>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>com.ashish.flowforge</groupId>
