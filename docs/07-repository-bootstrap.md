@@ -111,7 +111,7 @@ CI checks:
 
 The repository includes the mechanisms requested by the revision checklist: three-module Maven structure, executable Maven wrapper, module dependency enforcement, executable-boundary enforcement, forbidden-domain-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and design-defence material.
 
-The current CI run has passed the Maven verification stage plus module dependency, executable-boundary, and FlowForge domain-boundary checks. The Docker health stage remains part of the same final pipeline.
+The current repository-side CI checks have passed the Maven verification stage plus module dependency, executable-boundary, and FlowForge domain-boundary checks during this revision cycle. Docker health verification is included in the same workflow.
 
 Fresh-clone execution should still be recorded from an environment with outbound Git access and Docker installed.
 
