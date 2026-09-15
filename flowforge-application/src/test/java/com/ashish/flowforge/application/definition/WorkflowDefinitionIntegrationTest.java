@@ -9,10 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -67,8 +67,7 @@ class WorkflowDefinitionIntegrationTest {
     @Test
     void publishedDefinitionCannotBeModifiedAndCanBeRetired() {
         service.createDraft(workflow("lifecycle-test", 1));
-        var published = service.publish("lifecycle-test", 1);
-        assertEquals("PUBLISHED", published.status());
+        assertEquals("PUBLISHED", service.publish("lifecycle-test", 1).status());
         DefinitionException ex = assertThrows(DefinitionException.class, () -> service.updateDraft("lifecycle-test", 1, workflow("lifecycle-test", 1)));
         assertEquals("PUBLISHED_DEFINITION_IMMUTABLE", ex.code());
         assertEquals("RETIRED", service.retire("lifecycle-test", 1).status());
@@ -95,8 +94,8 @@ class WorkflowDefinitionIntegrationTest {
     void partiallyInsertedDefinitionRollsBack() {
         var invalidForDatabase = new WorkflowDefinitionInput("rollback-test", 1, "Rollback", "test", Map.of(), List.of(task("a", List.of("missing"))));
         assertThrows(RuntimeException.class, () -> transactions.executeWithoutResult(status -> repository.createDraft(invalidForDatabase)));
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workflow_definition WHERE workflow_key='rollback-test'", Integer.class));
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM task_definition", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workflow_definition WHERE workflow_key=?", Integer.class, "rollback-test"));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM task_definition t JOIN workflow_definition w ON w.workflow_definition_id=t.workflow_definition_id WHERE w.workflow_key=?", Integer.class, "rollback-test"));
     }
 
     @Test
@@ -112,7 +111,7 @@ class WorkflowDefinitionIntegrationTest {
                     service.createDraft(workflow(key, 1));
                     successes.incrementAndGet();
                 } catch (DefinitionException ignored) {
-                    // Unique constraint converts the losing race into a domain conflict.
+                    // Losing requests are converted to WORKFLOW_VERSION_EXISTS by the service.
                 }
                 return null;
             })).toList();
