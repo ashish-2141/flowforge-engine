@@ -129,3 +129,12 @@ A reviewer may introduce a new requirement. During the change, identify its impa
 8. retry policy
 9. outbox events
 10. tests needed to prove the new invariant
+
+## 15. Reviewer traps to avoid
+
+- Do not say a worker crash is directly detected. The engine observes missed progress and lease expiry.
+- Do not say fencing prevents external side effects. It protects engine-controlled writes.
+- Do not say RabbitMQ owns tasks. PostgreSQL-backed API polling owns tasks.
+- Do not call broker redelivery a task retry.
+- Do not jump directly from lease loss to READY without recording an attempt outcome and applying retry policy.
+- Do not imply workflow definitions or retry policies change after an instance begins.
