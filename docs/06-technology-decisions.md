@@ -2,59 +2,73 @@
 
 ## Decision principles
 
-Each technology choice is evaluated against the actual FlowForge requirements: concurrency control, durable recovery, duplicate handling, operational simplicity, local development, and the ability to explain and test the design during the Week 1 review.
+Each choice is evaluated against FlowForge requirements: concurrency control, durable recovery, duplicate handling, operational simplicity, local development, and testability.
 
 ## 1. Kafka vs RabbitMQ
 
 | Criterion | Kafka | RabbitMQ | Decision |
 |---|---|---|---|
-| Work distribution | Strong, but queue-like patterns need more design | Direct queue and acknowledgement model | RabbitMQ |
+| Work distribution | Possible, but requires additional consumer/partition design | Direct queue and acknowledgement model | RabbitMQ |
 | Event streaming | Excellent | Good | Kafka |
-| Replay model | Native log retention and replay | Consumer acknowledgement based | Kafka |
+| Replay model | Strong log retention and replay | More acknowledgement-oriented | Kafka |
 | Initial operational complexity | Higher | Lower | RabbitMQ |
-| Local development for this project | More components/concepts | Straightforward broker setup | RabbitMQ |
-| Fit for FlowForge worker acquisition | Good | Strong | RabbitMQ |
+| Local setup | More concepts to configure | Straightforward | RabbitMQ |
+| FlowForge event volume assumption | More capacity than initially required | Sufficient for initial design | RabbitMQ |
 
-Recommendation: RabbitMQ for the initial implementation. FlowForge needs straightforward work distribution, acknowledgements, retries, and a simple local environment. Kafka is stronger for high-throughput event streams and replay-oriented architectures, so it remains a future option if event-stream requirements grow.
+Decision: RabbitMQ for asynchronous workflow and domain events.
 
-The transactional outbox remains the durable source of publishable events regardless of broker choice.
+Important boundary: RabbitMQ does not assign task ownership. Worker acquisition is capability-based API polling backed by PostgreSQL. RabbitMQ carries events after durable state changes.
 
-## 2. JPA vs JDBC for concurrency-sensitive operations
+Kafka becomes a candidate when replay-heavy event streams, partition-oriented throughput, or long retention becomes a demonstrated requirement.
 
-| Criterion | JPA | JDBC | Decision |
+## 2. JPA vs JDBC
+
+The JDBC choice means Spring's `JdbcTemplate` for concurrency-sensitive commands. JPA is not required for the first implementation and should not be mixed casually with direct SQL over the same entities.
+
+| Criterion | JPA | JdbcTemplate | Decision |
 |---|---|---|---|
-| CRUD/read productivity | Strong | More explicit code | JPA |
-| SQL control | Indirect | Direct | JDBC |
-| Atomic task claim | Possible, but less explicit | Clear SQL and transaction control | JDBC |
-| Locking/concurrency semantics | Must understand ORM behavior | Explicit | JDBC |
-| Mapping domain objects | Strong | Manual | JPA |
+| Standard CRUD | Strong | More explicit code | JPA |
+| Exact SQL control | Indirect through ORM | Direct | JdbcTemplate |
+| Atomic claim query | Possible | Explicit | JdbcTemplate |
+| Locking behavior | ORM behavior must be understood | SQL is visible | JdbcTemplate |
+| Mapping productivity | Strong | Manual | JPA |
+| Reviewability of concurrency commands | Lower | Higher | JdbcTemplate |
 
-Recommendation: JDBC for task claiming, lease renewal, fenced result updates, and other concurrency-sensitive commands. JPA remains suitable for ordinary reads and less timing-sensitive access if it improves maintainability.
+Decision: use `JdbcTemplate` for task claim, lease renewal, recovery transitions, fenced result acceptance, and other concurrency-critical writes.
+
+If JPA is introduced later, entity ownership and transaction boundaries must remain explicit. The main risk of mixing JPA and JDBC is stale persistence-context state, unexpected flush ordering, and different assumptions about locking or isolation.
 
 ## 3. Polling vs push-based assignment
 
 | Criterion | Polling | Push | Decision |
 |---|---|---|---|
-| Ownership semantics | Explicit in claim request | Dispatcher must track assignment state | Polling |
-| Failure recovery | Simple lease expiry and retry | Requires dispatcher recovery | Polling |
-| Backpressure | Worker controls demand | Broker/dispatcher controls demand | Polling |
+| Ownership semantics | Explicit claim transaction | Dispatcher must track assignment | Polling |
+| Failure recovery | Lease-based and database-driven | Dispatcher recovery required | Polling |
+| Backpressure | Worker requests only when ready | Dispatcher controls delivery | Polling |
 | Broker coupling | Low | Higher | Polling |
-| Latency | Depends on poll interval | Lower | Push |
-| Initial implementation complexity | Lower | Higher | Polling |
+| Latency | Poll interval adds delay | Lower | Push |
+| Database load | Repeated empty queries | Lower polling load | Push |
+| Thundering herd risk | Present with many workers | Lower | Push |
+| Fairness | Requires deterministic ordering | Dispatcher can schedule centrally | Push |
+| Initial complexity | Lower | Higher | Polling |
 
-Recommendation: polling. Workers request compatible work using their capability set. This keeps ownership and lease recovery explicit. A push model can be evaluated later if measured latency requirements justify it.
+Decision: capability-based API polling.
+
+Known disadvantages are accepted for the initial design: empty queries, database load, polling latency, thundering herd behavior, and worker fairness concerns. Mitigations such as bounded poll intervals, indexed eligibility queries, jitter, batch limits, and deterministic ordering belong to implementation.
 
 ## 4. Database coordination vs external coordination
 
 | Criterion | PostgreSQL coordination | External coordination service |
 |---|---|---|
-| Number of consistency systems | One | Two or more |
-| Lease and workflow state alignment | Same transaction boundary | Cross-system coordination required |
+| Consistency systems | One | Multiple |
+| Workflow and lease alignment | Same database | Cross-system coordination |
 | Operational complexity | Lower | Higher |
-| Failure modes | Concentrated in DB | Additional network and service failures |
-| Scalability | Adequate for initial target | Better for some high-scale coordination workloads |
+| Failure surface | Smaller | Larger |
+| High-scale coordination | Adequate for initial target | Potentially stronger | Depends on scale |
 
-Recommendation: database coordination. Workflow state, leases, fencing tokens, idempotency records, and outbox records remain inside one durable consistency boundary. A dedicated coordination service is deferred until scale or topology requires it.
+Decision: PostgreSQL owns workflow state, task state, worker sessions, leases, fencing generations, idempotency records, and outbox records.
+
+An external coordination service is deferred until a measured scaling or topology requirement justifies it.
 
 ## 5. Modular monolith vs microservices
 
@@ -62,43 +76,54 @@ Recommendation: database coordination. Workflow state, leases, fencing tokens, i
 |---|---|---|
 | Deployment complexity | Lower | Higher |
 | Transaction boundaries | Simple | Distributed |
-| Debugging | Easier | More difficult |
+| Debugging | Easier | Harder |
 | Independent scaling | Limited | Strong |
-| Initial development speed | Faster | Slower |
+| Initial delivery | Faster | Slower |
 | Failure surface | Smaller | Larger |
 
-Recommendation: modular monolith for the first implementation. FlowForge and VoltOps remain separate Maven modules, while the engine remains one deployable application. Service boundaries can be introduced after observing real scaling or ownership requirements.
+Decision: modular monolith.
+
+The deployable boundary is one `flowforge-application` Spring Boot process. `flowforge-engine` is a reusable library, and `voltops-reference` is a domain library/adapter. Workers remain independent processes.
+
+This structure avoids the contradiction of having multiple executable Spring Boot modules while calling the system a single deployable application.
 
 ## 6. At-least-once vs other delivery approaches
 
-| Approach | Strength | Main problem for FlowForge | Decision |
+| Approach | Strength | Main problem | Decision |
 |---|---|---|---|
-| At-most-once | Fewer duplicates | Messages can be lost | Reject |
-| At-least-once | Durable redelivery | Duplicates are expected | Choose |
-| Exactly-once | Appears simple conceptually | Hard to guarantee across DB, broker, workers, and external effects | Reject for initial design |
+| At-most-once | Limits duplicates | Messages can be lost | Reject |
+| At-least-once | Redelivery is supported | Duplicates are expected | Choose |
+| Exactly-once | Stronger end-to-end promise in narrow systems | Not an end-to-end guarantee for arbitrary external effects | Not claimed |
 
-Recommendation: at-least-once delivery plus idempotency.
+Decision: at-least-once delivery with idempotent consumers and logical operations.
 
-FlowForge should assume a message, command, or event can be delivered more than once. The logical operation is protected with an idempotency key. Fencing protects task ownership after lease expiry and reassignment.
+FlowForge does not claim end-to-end exactly-once execution. Instead, it guarantees the properties implemented inside the engine's consistency boundary and defines explicit strategies for external side effects.
 
-This is a correctness model based on durable state and duplicate-safe effects rather than a claim of arbitrary exactly-once execution.
+## 7. RabbitMQ responsibility boundary
 
-## 7. Decision summary
+```text
+Worker --> FlowForge API --> PostgreSQL
+          claim ownership
+          heartbeat
+          result submission
 
-| Area | Decision | Primary reason |
-|---|---|---|
-| Broker | RabbitMQ | Simple work distribution and acknowledgements |
-| Persistence API | JDBC for critical writes | Explicit concurrency control |
-| Worker assignment | Polling | Clear ownership and recovery semantics |
-| Coordination | PostgreSQL | One durable consistency boundary |
-| Architecture | Modular monolith | Lower initial complexity |
-| Delivery | At least once + idempotency | Reliable while making duplicates safe |
+FlowForge --> Outbox --> RabbitMQ --> Event Consumers
+```
 
-## 8. Revisit triggers
+The worker claim path does not depend on RabbitMQ. A RabbitMQ redelivery therefore cannot itself cause a new FlowForge task attempt.
 
-These decisions should be reconsidered only when evidence changes the requirements.
+## 8. Transaction boundary rule
 
-- Move from RabbitMQ if event-stream replay or throughput requirements dominate work distribution.
-- Add push assignment if measured polling latency becomes unacceptable.
-- Split services if independent scaling, team ownership, or fault isolation becomes necessary.
-- Introduce external coordination only when database-based coordination becomes a demonstrated bottleneck.
+Only engine-owned records participate in the PostgreSQL transaction described by FlowForge.
+
+A single transaction may contain workflow/task state, attempt history, lease state, fencing generation, idempotency records, and outbox records.
+
+External calls do not become atomic merely because they occur near the database transaction. Their outcome requires an explicit integration protocol.
+
+## 9. Revisit triggers
+
+- RabbitMQ should be reconsidered if event-stream replay or throughput becomes dominant.
+- Polling should be reconsidered if measured task-start latency or database load becomes unacceptable.
+- JPA should be expanded into write paths only if it can preserve explicit concurrency semantics.
+- Microservices should be introduced only for observed scaling, ownership, or fault-isolation requirements.
+- External coordination should be considered only after PostgreSQL coordination becomes a demonstrated bottleneck.
