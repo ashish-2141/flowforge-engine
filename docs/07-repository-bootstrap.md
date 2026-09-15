@@ -109,13 +109,13 @@ CI checks:
 
 ## Evidence status
 
-The repository contains the mechanisms requested by the revision checklist: three-module Maven structure, executable Maven wrapper, module dependency enforcement, executable-boundary enforcement, forbidden-domain-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and design-defence material.
+The repository includes the mechanisms requested by the revision checklist: three-module Maven structure, executable Maven wrapper, module dependency enforcement, executable-boundary enforcement, forbidden-domain-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and design-defence material.
 
-The current revision's GitHub Actions pipeline has passed Maven verification, module dependency checks, executable-boundary checks, and the FlowForge domain-boundary check. The Docker health stage is part of the same final pipeline and remains the last infrastructure gate.
+The current CI run has passed the Maven verification stage plus module dependency, executable-boundary, and FlowForge domain-boundary checks. The Docker health stage remains part of the same final pipeline.
 
-Fresh-clone execution should still be recorded from an environment with outbound Git access and Docker installed. The current execution environment cannot perform the external Git clone itself.
+Fresh-clone execution should still be recorded from an environment with outbound Git access and Docker installed.
 
-The commit history contains separate documentation, architecture, CI, infrastructure, and module-structure changes, providing a reviewable trail.
+The repository history contains separate documentation, architecture, CI, infrastructure, and module-structure changes, providing a reviewable trail.
 
 ## Week 1 scope boundary
 
