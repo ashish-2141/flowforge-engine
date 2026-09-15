@@ -2,230 +2,421 @@
 
 ## 1. Modeling goals
 
-The data model must keep workflow state durable, support safe concurrent task claiming, represent ownership expiry, reject stale workers, support retries and idempotency, and preserve committed events through broker failures.
+The data model must preserve the distinction between what a workflow is and an execution of that workflow, between what a task is and one execution attempt, and between the current ownership state and historical ownership records.
 
-PostgreSQL is the consistency boundary for all orchestration state.
+The model must support:
 
-## 2. Entities
+- immutable workflow and task definitions
+- multiple workflow instances per definition version
+- multiple task instances per task definition
+- dependency-aware scheduling
+- worker sessions that change across process restarts
+- historical leases and task attempts
+- authoritative fencing generation on the task instance
+- retry and timeout history
+- scoped idempotency
+- durable outbox publication
 
-### Workflow
+PostgreSQL is the orchestration consistency boundary.
+
+## 2. Target entity set
 
 ```text
-workflow_id       PK
-workflow_key      business identifier for a workflow definition
-version           definition version
-status            lifecycle state
-created_at
-completed_at
+workflow_definition
+task_definition
+task_dependency
+workflow_instance
+task_instance
+task_attempt
+worker_session
+worker_capability
+task_lease_history
+retry_policy
+idempotency_record
+outbox_event
 ```
 
-Constraint: `UNIQUE(workflow_key, version)`.
+## 3. Entity definitions
 
-### Task
+### workflow_definition
 
 ```text
-task_id             PK
-workflow_id         FK -> workflow.workflow_id
-task_key            unique within workflow
+workflow_definition_id       PK
+workflow_key                logical workflow name
+version                     immutable version number
+status                      definition lifecycle
+definition_payload          serialized definition
+created_at
+```
+
+Constraints:
+
+```text
+UNIQUE(workflow_key, version)
+A referenced version is immutable.
+```
+
+A workflow instance references exactly one immutable definition version.
+
+### task_definition
+
+```text
+task_definition_id          PK
+workflow_definition_id       FK -> workflow_definition
+                    task_key
+required_capability
+retry_policy_id             FK -> retry_policy
+position / metadata
+```
+
+Constraint:
+
+```text
+UNIQUE(workflow_definition_id, task_key)
+```
+
+A task definition describes a unit of work inside a workflow definition. It does not represent one execution.
+
+### task_dependency
+
+```text
+workflow_definition_id       FK -> workflow_definition
+task_definition_id           FK -> task_definition
+depends_on_task_definition_id FK -> task_definition
+```
+
+Primary key:
+
+```text
+(task_definition_id, depends_on_task_definition_id)
+```
+
+Constraints:
+
+```text
+task_definition_id <> depends_on_task_definition_id
+Both task definitions belong to the same workflow definition.
+Cycles are rejected during definition validation.
+```
+
+Dependencies belong to the definition graph, not individual executions. Instances inherit the validated graph from the immutable definition version.
+
+### workflow_instance
+
+```text
+workflow_instance_id         PK
+workflow_definition_id       FK -> workflow_definition
+status
+idempotency_scope / request reference
+created_at
+started_at                   nullable
+completed_at                 nullable
+```
+
+Constraint:
+
+```text
+workflow_definition_id cannot be changed after instance creation.
+```
+
+One workflow definition version can have many workflow instances.
+
+### task_instance
+
+```text
+task_instance_id             PK
+workflow_instance_id         FK -> workflow_instance
+task_definition_id           FK -> task_definition
 state
-retry_policy_id     FK -> retry_policy.retry_policy_id
+authoritative_fencing_generation
 next_eligible_at
-current_lease_id    FK -> lease.lease_id, nullable
-result_ref          nullable
-error_code          nullable
-attempt_count
+current_lease_id             nullable reference to current lease history row
+current_attempt_id           nullable reference to task_attempt
+result_ref                   nullable
+error_code                   nullable
 created_at
 updated_at
 ```
 
-Constraint: `UNIQUE(workflow_id, task_key)`.
-
-### Dependency
+Constraints:
 
 ```text
-task_id               FK -> task.task_id
-depends_on_task_id    FK -> task.task_id
+UNIQUE(workflow_instance_id, task_definition_id)
+authoritative_fencing_generation is monotonic per task instance.
+The task instance owns the authoritative current fencing generation.
 ```
 
-Primary key: `(task_id, depends_on_task_id)`.
+The current lease is a convenience pointer only. Historical lease records remain in `task_lease_history`.
 
-Constraint: `task_id <> depends_on_task_id`.
-
-Workflow definition validation must also reject dependency cycles before the workflow is accepted for execution.
-
-### Worker
+### task_attempt
 
 ```text
-worker_id             PK
-capabilities          declared capability set
-status                worker availability
+task_attempt_id              PK
+task_instance_id             FK -> task_instance
+attempt_number
+outcome                       PENDING / SUCCEEDED / FAILED / TIMED_OUT / LEASE_LOST
+worker_session_id             FK -> worker_session, nullable
+fencing_generation
+started_at                    nullable
+ended_at                      nullable
+error_code                    nullable
+error_details                 nullable
+```
+
+Constraint:
+
+```text
+UNIQUE(task_instance_id, attempt_number)
+```
+
+Every execution attempt gets a durable history row. An attempt outcome is historical data, not a resting task state.
+
+### worker_session
+
+```text
+worker_session_id             PK
+worker_id                     logical worker identity
+session_status
+registered_at
 last_heartbeat_at
-total_claims
-created_at
-updated_at
+expires_at                    nullable
 ```
 
-Index by `status` and heartbeat time for liveness checks.
+A logical worker identity may have many sessions over time. A process restart creates a new `worker_session_id`.
 
-### Lease
+### worker_capability
 
 ```text
-lease_id              PK
-task_id               FK -> task.task_id
-worker_id             FK -> worker.worker_id
+worker_session_id             FK -> worker_session
+capability_key
+created_at
+```
+
+Primary key:
+
+```text
+(worker_session_id, capability_key)
+```
+
+Capabilities describe what the current worker session is eligible to execute.
+
+### task_lease_history
+
+```text
+lease_id                      PK
+task_instance_id              FK -> task_instance
+worker_session_id             FK -> worker_session
+fencing_generation
+acquired_at
 expires_at
-fencing_token
-created_at
-released_at           nullable
+released_at                   nullable
+release_reason                nullable
 ```
 
-Important invariant: each task has at most one current active lease.
+A lease is historical. The row is never overwritten to represent a later owner.
 
-`fencing_token` is monotonically increasing for a task whenever ownership changes.
-
-### IdempotencyRecord
+Constraints:
 
 ```text
-idempotency_key       PK
+At most one unexpired active lease exists for a task instance.
+A fencing_generation is unique per task instance ownership generation.
+```
+
+### retry_policy
+
+```text
+retry_policy_id               PK
+version
+max_attempts
+backoff_type
+backoff_parameters
+timeout_seconds
+created_at
+```
+
+Constraint:
+
+```text
+UNIQUE(retry_policy_id, version)
+Referenced policy versions are immutable.
+```
+
+A running task instance continues using the policy version resolved when its definition version was created.
+
+### idempotency_record
+
+```text
+idempotency_record_id         PK
+tenant_id / application_id    scope field
+workflow_instance_id         nullable FK -> workflow_instance
 operation_type
+idempotency_key
 request_hash
-outcome_ref
+status
+outcome_ref                   nullable
 created_at
+completed_at                  nullable
 ```
 
-Constraint: one logical request key maps to one protected outcome.
-
-A conflicting request that reuses the same key with a different request hash must be rejected rather than treated as a duplicate of the original request.
-
-### OutboxEvent
+The effective uniqueness boundary is scoped:
 
 ```text
-event_id              PK
+UNIQUE(tenant_id, application_id, operation_type, idempotency_key)
+```
+
+A repeated key with the same request hash maps to the existing logical operation. The same key with a different request hash is rejected as a conflict.
+
+### outbox_event
+
+```text
+outbox_event_id               PK
 aggregate_type
 aggregate_id
 event_type
 payload
 created_at
-published_at          nullable
-attempts
-last_error             nullable
+publish_attempts
+publish_claim_id              nullable
+publish_claim_expires_at     nullable
+published_at                  nullable
+last_error                   nullable
 ```
 
-Unpublished events are represented by `published_at IS NULL`.
+`published_at IS NULL` means the event still needs publication or verification of publication status.
 
-### RetryPolicy
-
-```text
-retry_policy_id       PK
-max_attempts
-backoff_policy
-timeout_seconds
-```
-
-## 3. Relationship model
+## 4. Relationships
 
 ```mermaid
 erDiagram
-    WORKFLOW ||--o{ TASK : contains
-    TASK ||--o{ DEPENDENCY : has
-    TASK ||--o{ LEASE : receives
-    WORKER ||--o{ LEASE : owns
-    RETRY_POLICY ||--o{ TASK : configures
-    WORKFLOW ||--o{ OUTBOX_EVENT : emits
-    TASK ||--o{ OUTBOX_EVENT : emits
+    WORKFLOW_DEFINITION ||--o{ TASK_DEFINITION : contains
+    TASK_DEFINITION ||--o{ TASK_DEPENDENCY : has
+    WORKFLOW_DEFINITION ||--o{ WORKFLOW_INSTANCE : instantiates
+    WORKFLOW_INSTANCE ||--o{ TASK_INSTANCE : contains
+    TASK_DEFINITION ||--o{ TASK_INSTANCE : instantiated_as
+    TASK_INSTANCE ||--o{ TASK_ATTEMPT : attempts
+    TASK_INSTANCE ||--o{ TASK_LEASE_HISTORY : leases
+    WORKER_SESSION ||--o{ TASK_LEASE_HISTORY : owns
+    WORKER_SESSION ||--o{ WORKER_CAPABILITY : declares
+    RETRY_POLICY ||--o{ TASK_DEFINITION : configures
+    WORKFLOW_INSTANCE ||--o{ IDEMPOTENCY_RECORD : scopes
 ```
 
-The dependency relationship is self-referential on `TASK`: one task depends on another task in the same workflow.
+Dependency edges belong to task definitions. A workflow instance obtains the dependency graph by referencing its immutable workflow definition.
 
-## 4. Keys and constraints
+## 5. Keys and constraints
 
-| Table | Primary key | Important foreign keys | Important constraints |
+| Entity | Primary key | Important foreign keys | Important constraints |
 |---|---|---|---|
-| workflow | workflow_id | none | unique `(workflow_key, version)` |
-| task | task_id | workflow_id, retry_policy_id, current_lease_id | unique `(workflow_id, task_key)` |
-| dependency | `(task_id, depends_on_task_id)` | both columns reference task | no self-dependency |
-| worker | worker_id | none | worker identity is stable during an execution session |
-| lease | lease_id | task_id, worker_id | at most one active lease per task |
-| idempotency_record | idempotency_key | none | unique logical request key |
-| outbox_event | event_id | logical aggregate references | `published_at` remains null until publication succeeds |
-| retry_policy | retry_policy_id | none | non-negative attempts and positive timeout |
+| workflow_definition | workflow_definition_id | none | unique `(workflow_key, version)`, immutable after reference |
+| task_definition | task_definition_id | workflow_definition_id, retry_policy_id | unique `(workflow_definition_id, task_key)` |
+| task_dependency | `(task_definition_id, depends_on_task_definition_id)` | both → task_definition | no self-edge, same workflow definition |
+| workflow_instance | workflow_instance_id | workflow_definition_id | definition reference immutable |
+| task_instance | task_instance_id | workflow_instance_id, task_definition_id | unique pair, fencing generation owned here |
+| task_attempt | task_attempt_id | task_instance_id, worker_session_id | unique `(task_instance_id, attempt_number)` |
+| worker_session | worker_session_id | none | session identity changes across restarts |
+| worker_capability | `(worker_session_id, capability_key)` | worker_session_id | no duplicate capability per session |
+| task_lease_history | lease_id | task_instance_id, worker_session_id | at most one active lease per task |
+| retry_policy | retry_policy_id + version | none | referenced versions immutable |
+| idempotency_record | idempotency_record_id | optional workflow_instance_id | scoped uniqueness on logical request identity |
+| outbox_event | outbox_event_id | logical aggregate ID | durable publication record |
 
-## 5. Indexes
-
-Recommended indexes:
+## 6. Indexes
 
 ```text
-workflow(workflow_key, version)
-task(state, next_eligible_at)
-task(workflow_id, state)
-task(current_lease_id)
-dependency(depends_on_task_id)
-worker(status, last_heartbeat_at)
-lease(task_id, expires_at)
-lease(expires_at)
+workflow_definition(workflow_key, version)
+task_definition(workflow_definition_id, task_key)
+task_dependency(depends_on_task_definition_id)
+workflow_instance(workflow_definition_id, status)
+task_instance(state, next_eligible_at)
+task_instance(workflow_instance_id, state)
+task_attempt(task_instance_id, attempt_number)
+worker_session(session_status, last_heartbeat_at)
+worker_capability(capability_key, worker_session_id)
+task_lease_history(task_instance_id, expires_at)
+task_lease_history(expires_at)
+idempotency_record(tenant_id, application_id, operation_type, idempotency_key)
 outbox_event(published_at, created_at)
-idempotency_record(created_at)
+outbox_event(publish_claim_expires_at)
 ```
 
-The highest-value scheduling index is the task index on `(state, next_eligible_at)` because recovery and worker polling repeatedly search for eligible work.
+## 7. Transaction boundaries
 
-## 6. Transaction boundaries
+### Definition publication
+
+Create an immutable workflow definition version and its task definitions/dependencies in one transaction. Once an instance references the version, the definition is immutable.
+
+### Workflow instantiation
+
+Create the workflow instance and its task instances from one immutable definition version in one transaction.
 
 ### Task claim
 
-One database transaction must:
+One transaction must:
 
-1. identify an eligible task
-2. verify it is still claimable
-3. create or replace the active ownership record
-4. assign the next fencing token
-5. persist the owner and lease expiry
+1. select an eligible task instance
+2. verify current state and eligibility
+3. verify the worker session and capability
+4. create a new lease-history row
+5. increment the task instance's authoritative fencing generation
+6. create the task attempt if the attempt starts at claim
+7. update current ownership pointers
 
-Concurrent workers therefore observe one winner.
+Concurrent claimers therefore produce one valid ownership generation.
 
 ### Lease renewal
 
-Renewal must update the lease only when the worker identity and current fencing token still match. A stale worker must not extend a lease after reassignment.
+Update the active lease only when the worker session, lease ID, and current fencing generation still match the task instance. A stale session cannot renew after reassignment.
 
-### Task result
+### Task attempt outcome
 
-One transaction must:
+One transaction records the attempt outcome and updates task/workflow state. A valid successful result also inserts the corresponding outbox event in the same transaction.
 
-1. verify task identity
-2. verify worker identity
-3. verify current fencing token
-4. apply the task result
-5. update workflow/task state as needed
-6. insert the corresponding outbox event
+### Idempotent engine-owned operation
 
-If any step fails, the transaction rolls back.
+When the protected business state lives in the same PostgreSQL database:
 
-### Idempotent operation
+1. insert or lock the scoped idempotency record
+2. verify request-hash consistency
+3. apply the protected state change
+4. record the outcome
 
-When the protected business state lives in the same database:
+These steps commit atomically.
 
-1. check or insert the idempotency record
-2. apply the business state change
-3. store the resulting outcome reference
+External systems are outside this transaction. Their operations require an integration-specific idempotency, reconciliation, or compensation strategy.
 
-These operations commit atomically.
+### Outbox publication
 
-When an external system is involved, it is outside the database transaction. The integration must use an idempotency key, transactional inbox/outbox where appropriate, or a compensating action.
+Multiple publishers claim unpublished rows using a conditional database claim with an expiry. Only the publisher holding the current claim should mark its publication attempt complete.
 
-## 7. Concurrency and fencing invariant
+The publish-before-mark crash window still permits duplicate publication. Consumers must be idempotent.
 
-For task `T`, ownership generations look like:
+## 8. Fencing invariant
+
+Fencing authority lives on `task_instance`:
 
 ```text
-Worker A claims T -> fencing_token = 7
-Worker A lease expires
-Worker B claims T -> fencing_token = 8
+Worker session S1 claims task T
+    authoritative_fencing_generation = 7
+
+Lease expires
+
+Worker session S2 claims task T
+    authoritative_fencing_generation = 8
+
+S1 submits result with generation 7
+    -> reject
 ```
 
-Any result carrying token `7` is stale after token `8` is committed and must be rejected.
+The authoritative comparison uses task ID, worker session ID, lease ID, fencing generation, task state, and lease validity. The token alone is not sufficient.
 
-The database is authoritative for the current token. Worker-local state never overrides the durable token.
+## 9. Immutability rules
 
-## 8. Retention considerations
+- Workflow definition versions are immutable after creation.
+- Task definitions and dependency edges are immutable with their workflow definition version.
+- Retry policies are immutable versions referenced by task definitions.
+- Workflow instances keep their original definition version even when newer versions are published.
+- Task attempts and lease history are append-only records.
 
-Idempotency records and outbox events require a retention policy. Cleanup must not remove records while they are still needed to deduplicate active requests or reconstruct required event-delivery history. Exact retention duration is an implementation decision for a later stage.
+## 10. Retention
+
+Idempotency records, attempts, lease history, and outbox events require retention policies. Cleanup must not remove data still required for deduplication, reconciliation, audit, recovery diagnosis, or event replay requirements. Exact durations remain an implementation-stage decision.
