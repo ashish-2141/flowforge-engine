@@ -14,12 +14,13 @@
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>FlowForge Engine</name>
+    <name>FlowForge Platform</name>
     <description>Fault-tolerant distributed workflow orchestration platform</description>
 
     <modules>
         <module>flowforge-engine</module>
         <module>voltops-reference</module>
+        <module>flowforge-application</module>
     </modules>
 
     <properties>
