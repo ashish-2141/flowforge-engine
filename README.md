@@ -131,9 +131,9 @@ CI performs:
 
 ## Current validation
 
-The latest revision includes the reviewer-requested structural and documentation corrections. The current CI pipeline has already passed the Maven verification stage plus module dependency, executable-boundary, and FlowForge domain-boundary checks during this revision cycle. The Docker health stage is included in the final pipeline.
+The latest completed revision cycle has passed the Maven verification stage, module dependency-direction check, executable-boundary check, and FlowForge domain-boundary check. Docker health verification is included in the same CI workflow.
 
-Fresh-clone evidence must still be captured in an environment with Git, network access, and Docker. The current execution environment cannot perform that external clone itself.
+Fresh-clone evidence still needs to be captured in an environment with Git, network access, and Docker installed.
 
 ## Week 1 scope
 
