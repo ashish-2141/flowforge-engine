@@ -20,6 +20,7 @@ The design focuses on durable state, atomic task claiming, worker sessions, leas
 6. [Technology decision note](docs/06-technology-decisions.md)
 7. [Repository bootstrap](docs/07-repository-bootstrap.md)
 8. [Design defence guide](docs/08-design-defence.md)
+9. [Review evidence pack](docs/09-review-evidence.md)
 
 ## Repository structure
 
@@ -110,9 +111,20 @@ CI performs Java 21 setup, module dependency-direction enforcement, executable-b
 
 ## Current validation
 
-The revision cycle has produced successful CI stages for Maven verification and the structural/domain-boundary checks. The workflow also includes Docker health verification.
+The latest successful CI run verifies a clean repository checkout, the three-module Maven structure, the reusable/executable module boundaries, the FlowForge domain boundary, `./mvnw -B clean verify`, and PostgreSQL/RabbitMQ health.
 
-Fresh-clone evidence still needs to be captured in an environment with Git, network access, and Docker installed.
+The latest Maven reactor passed:
+
+```text
+FlowForge Platform       SUCCESS
+FlowForge Engine         SUCCESS
+VoltOps Reference        SUCCESS
+FlowForge Application    SUCCESS
+```
+
+No production orchestration tests exist yet because Week 1 explicitly defers implementation. The CI workflow therefore validates the repository baseline and currently reports no tests to run.
+
+See [the review evidence pack](docs/09-review-evidence.md) for the exact verification commands and proof points.
 
 ## Week 1 scope
 
