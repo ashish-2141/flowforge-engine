@@ -19,6 +19,7 @@ The design focuses on durable state, atomic task claiming, worker sessions, leas
 5. [Failure analysis](docs/05-failure-analysis.md)
 6. [Technology decision note](docs/06-technology-decisions.md)
 7. [Repository bootstrap](docs/07-repository-bootstrap.md)
+8. [Design defence guide](docs/08-design-defence.md)
 
 ## Repository structure
 
@@ -27,10 +28,10 @@ flowforge-engine/
 ├── flowforge-engine/          # reusable domain-independent library
 ├── voltops-reference/         # domain-specific library / adapter
 ├── flowforge-application/     # sole executable Spring Boot application
-├── docs/                      # Week 1 design artifacts
+├── docs/                      # design and review material
 ├── .github/workflows/         # CI checks
 ├── docker-compose.yml         # PostgreSQL and RabbitMQ
-├── mvnw                       # Maven wrapper entry point
+├── mvnw                       # portable Maven wrapper
 ├── pom.xml                    # Maven multi-module parent
 └── README.md
 ```
@@ -98,9 +99,8 @@ The design explicitly handles:
 ## Run locally
 
 ```bash
-chmod +x mvnw
 ./mvnw clean verify
-docker compose up -d
+docker compose up -d --wait
 ```
 
 Run the executable application with:
@@ -112,7 +112,7 @@ Run the executable application with:
 Stop supporting services with:
 
 ```bash
-docker compose down
+docker compose down -v
 ```
 
 ## CI
@@ -126,7 +126,14 @@ CI performs:
 3. Executable-boundary enforcement.
 4. Forbidden-domain-term check inside `flowforge-engine`.
 5. `./mvnw -B clean verify`.
-6. Docker Compose configuration validation.
+6. Docker Compose startup with health checks.
+7. Docker Compose cleanup.
+
+## Current revision validation
+
+The latest revision's CI run has already completed the Maven build and test phase successfully. The module dependency check, executable-boundary check, and forbidden-domain-term check also passed in that run. The infrastructure-health stage runs after those checks.
+
+The current revision is suitable for the design-review phase once the final CI run is green.
 
 ## Week 1 scope
 
@@ -136,7 +143,7 @@ Implementation begins only after the design-review gate is approved.
 
 ## Review preparation
 
-The design review must be defendable without reading from the documents. Be prepared to explain task claiming, lease expiry, fencing, duplicate delivery, external side effects, outbox crash windows, recovery races, definition-versus-instance modeling, and the PostgreSQL/RabbitMQ responsibility boundary.
+Use [the design defence guide](docs/08-design-defence.md) for the closed-book review. Be prepared to explain task claiming, lease expiry, fencing, duplicate delivery, external side effects, outbox crash windows, concurrent recovery, definition-versus-instance modeling, timeout handling, cancellation, and the PostgreSQL/RabbitMQ responsibility boundary.
 
 ## License
 
