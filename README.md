@@ -131,9 +131,9 @@ CI performs:
 
 ## Current validation
 
-The most recent CI run visible during this revision passed the Maven build and test phase, plus module dependency, executable-boundary, and domain-boundary checks. Docker health verification was also added to the workflow and remains part of the final gate.
+The current revision has passed the CI Maven verification phase, module dependency-direction check, executable-boundary check, and FlowForge domain-boundary check. The Docker infrastructure-health stage is included in the final CI gate.
 
-A fresh local clone is still required as reviewer evidence. The current model environment cannot perform the outbound Git clone itself.
+A fresh local clone should still be used for reviewer evidence. The current execution environment has no outbound Git access, so the local clone itself was not run here.
 
 ## Week 1 scope
 
