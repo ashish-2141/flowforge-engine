@@ -66,5 +66,12 @@ jobs:
       - name: Verify build and tests
         run: ./mvnw -B clean verify
 
-      - name: Verify Docker Compose configuration
-        run: docker compose config -q
+      - name: Start healthy local dependencies
+        run: docker compose up -d --wait
+
+      - name: Verify container health
+        run: docker compose ps
+
+      - name: Stop local dependencies
+        if: always()
+        run: docker compose down -v
