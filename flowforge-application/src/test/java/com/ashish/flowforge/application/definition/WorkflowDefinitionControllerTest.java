@@ -12,9 +12,12 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class WorkflowDefinitionControllerTest {
     private WorkflowDefinitionService service;
@@ -35,7 +38,9 @@ class WorkflowDefinitionControllerTest {
 
         mvc.perform(post("/api/v1/workflow-definitions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""{"workflowKey":"document-approval","version":1,"name":"Document Approval","description":"demo","inputSchema":{"type":"object"},"tasks":[{"taskKey":"validate","name":"Validate","taskType":"AUTOMATED","requiredCapabilities":["TEST"],"timeoutSeconds":60,"retryPolicy":{"maximumAttempts":3,"initialDelaySeconds":1,"backoffMultiplier":2,"maximumDelaySeconds":60,"jitterEnabled":true},"dependsOn":[]}]}")""")
+                        .content("""
+                                {"workflowKey":"document-approval","version":1,"name":"Document Approval","description":"demo","inputSchema":{"type":"object"},"tasks":[{"taskKey":"validate","name":"Validate","taskType":"AUTOMATED","requiredCapabilities":["TEST"],"timeoutSeconds":60,"retryPolicy":{"maximumAttempts":3,"initialDelaySeconds":1,"backoffMultiplier":2,"maximumDelaySeconds":60,"jitterEnabled":true},"dependsOn":[]}]}
+                                """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", containsString("/api/v1/workflow-definitions/document-approval/versions/1")))
                 .andExpect(jsonPath("$.workflowKey").value("document-approval"))
