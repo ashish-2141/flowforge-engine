@@ -20,6 +20,11 @@ class WorkflowDefinitionValidatorTest {
         assertTrue(result.isEmpty());
     }
 
+    @Test void rejectsEmptyWorkflow() {
+        var errors = validator.validate(workflow(List.of()));
+        assertTrue(errors.stream().anyMatch(e -> e.code().equals("INVALID_WORKFLOW_DEFINITION")));
+    }
+
     @Test void rejectsDuplicateTaskKey() {
         var errors = validator.validate(workflow(List.of(task("a", List.of()), task("a", List.of()))));
         assertTrue(errors.stream().anyMatch(e -> e.code().equals("DUPLICATE_TASK_KEY")));
@@ -35,7 +40,7 @@ class WorkflowDefinitionValidatorTest {
         assertTrue(errors.stream().anyMatch(e -> e.code().equals("SELF_DEPENDENCY")));
     }
 
-    @Test void rejectsDirectCycleAndReportsPath() {
+    @Test void rejectsTwoTaskCycleAndReportsPath() {
         var errors = validator.validate(workflow(List.of(task("a", List.of("b")), task("b", List.of("a")))));
         var cycle = errors.stream().filter(e -> e.code().equals("WORKFLOW_CYCLE_DETECTED")).findFirst().orElseThrow();
         assertEquals(List.of("a", "b", "a"), cycle.details().get("cycle"));
@@ -44,6 +49,12 @@ class WorkflowDefinitionValidatorTest {
     @Test void rejectsIndirectCycle() {
         var errors = validator.validate(workflow(List.of(task("a", List.of("c")), task("b", List.of("a")), task("c", List.of("b")))));
         assertTrue(errors.stream().anyMatch(e -> e.code().equals("WORKFLOW_CYCLE_DETECTED")));
+    }
+
+    @Test void rejectsInvalidTaskType() {
+        var t = new TaskDefinitionInput("a", "A", "UNKNOWN", List.of("X"), 60, new RetryPolicyInput(3, 1, 2.0, 30, true), Map.of(), List.of());
+        var errors = validator.validate(new WorkflowDefinitionInput("demo", 1, "Demo", "", Map.of(), List.of(t)));
+        assertTrue(errors.stream().anyMatch(e -> e.code().equals("INVALID_WORKFLOW_DEFINITION")));
     }
 
     @Test void rejectsInvalidTimeoutAndRetry() {
