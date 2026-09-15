@@ -24,8 +24,8 @@ flowforge-engine/
 
 The root Maven project has three modules:
 
-- `flowforge-engine`: reusable domain-independent orchestration library, no executable Spring Boot entry point.
-- `voltops-reference`: domain-specific workflow library/adapter, no independent executable entry point.
+- `flowforge-engine`: reusable domain-independent orchestration library, with no executable Spring Boot entry point.
+- `voltops-reference`: domain-specific workflow library/adapter, with no independent executable entry point.
 - `flowforge-application`: sole executable Spring Boot application, depending on both libraries.
 
 Dependency direction:
@@ -67,7 +67,9 @@ Only `flowforge-application` uses the Spring Boot Maven packaging plugin.
 
 ## Supporting services
 
-Docker Compose provides PostgreSQL for durable orchestration state and RabbitMQ for asynchronous workflow/domain events. RabbitMQ does not grant task ownership. PostgreSQL-backed API polling owns task acquisition.
+Docker Compose provides PostgreSQL for durable orchestration state and RabbitMQ for asynchronous workflow and domain events.
+
+RabbitMQ does not grant task ownership. Workers acquire work through capability-based API polling backed by PostgreSQL.
 
 Both services have health checks.
 
@@ -82,13 +84,13 @@ docker compose ps
 docker compose down -v
 ```
 
+The Maven wrapper uses a system Maven binary when available and otherwise bootstraps Maven 3.9.9.
+
 Run the executable application with:
 
 ```bash
 ./mvnw -pl flowforge-application spring-boot:run
 ```
-
-The Maven wrapper uses a system Maven binary when available and otherwise bootstraps Maven 3.9.9.
 
 ## CI verification
 
@@ -107,14 +109,36 @@ CI checks:
 
 ## Evidence status
 
-The repository now contains the review-requested evidence mechanisms: three-module Maven structure, executable Maven wrapper, module and executable-boundary checks, forbidden-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and a design-defence guide.
+The repository contains the mechanisms requested by the revision checklist: three-module Maven structure, executable Maven wrapper, module dependency enforcement, executable-boundary enforcement, forbidden-domain-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and design-defence material.
 
-Fresh-clone execution still needs to be performed in an environment with Docker and outbound network access. The current execution environment cannot perform an external Git clone.
+The current revision's GitHub Actions pipeline has passed Maven verification, module dependency checks, executable-boundary checks, and the FlowForge domain-boundary check. The Docker health stage is part of the same final pipeline and remains the last infrastructure gate.
 
-The repository history contains separate documentation, CI, infrastructure, and module-structure commits for review.
+Fresh-clone execution should still be recorded from an environment with outbound Git access and Docker installed. The current execution environment cannot perform the external Git clone itself.
+
+The commit history contains separate documentation, architecture, CI, infrastructure, and module-structure changes, providing a reviewable trail.
 
 ## Week 1 scope boundary
 
-Included: repository bootstrap, three-module Maven structure, Spring Boot application baseline, Docker Compose, README/setup instructions, the seven required Week 1 deliverables, design-defence material, and CI checks.
+Included:
 
-Excluded: production task execution, worker lease implementation, retry implementation, production outbox publishing, frontend dashboard, metrics infrastructure, Kubernetes, and cloud deployment.
+- Git repository
+- three-module Maven structure
+- Spring Boot application baseline
+- Docker Compose
+- README and setup instructions
+- seven required Week 1 deliverables
+- design-defence guide
+- CI boundary and build checks
+
+Excluded:
+
+- production task execution
+- worker lease implementation
+- retry implementation
+- production outbox publishing
+- frontend dashboard
+- metrics infrastructure
+- Kubernetes deployment
+- cloud deployment
+
+Implementation remains behind the design-review gate.
