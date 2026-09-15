@@ -38,7 +38,7 @@ flowforge-engine/
 
 ## Deployment model
 
-The initial architecture is a modular monolith with one executable Spring Boot process:
+The initial architecture is a modular monolith with one executable Spring Boot process. Workers remain separate processes.
 
 ```text
 flowforge-application
@@ -72,20 +72,7 @@ A task result is accepted only when task ID, worker session ID, lease ID, fencin
 
 ## Failure model
 
-The design explicitly handles:
-
-- concurrent claims
-- worker failure before or during execution
-- lease expiry and reassignment
-- stale worker results
-- duplicate message delivery
-- uncertain external side effects
-- outbox publish-before-mark crashes
-- broker unavailability
-- orchestrator restart
-- task timeout
-- retry exhaustion
-- concurrent recovery schedulers
+The design explicitly handles concurrent claims, worker failure, lease expiry and reassignment, stale worker results, duplicate delivery, uncertain external effects, outbox crash windows, broker unavailability, orchestrator restart, timeout, retry exhaustion, and concurrent recovery schedulers.
 
 ## Technology
 
@@ -119,19 +106,11 @@ docker compose down -v
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
 
-CI performs:
-
-1. Java 21 setup.
-2. Module dependency-direction enforcement.
-3. Executable-boundary enforcement.
-4. Forbidden-domain-term check inside `flowforge-engine`.
-5. `./mvnw -B clean verify`.
-6. Docker Compose startup with health checks.
-7. Docker Compose cleanup.
+CI performs Java 21 setup, module dependency-direction enforcement, executable-boundary enforcement, forbidden-domain-term checks, full Maven verification, Docker Compose health verification, and cleanup.
 
 ## Current validation
 
-The latest completed revision cycle has passed the Maven verification stage, module dependency-direction check, executable-boundary check, and FlowForge domain-boundary check. Docker health verification is included in the same CI workflow.
+The revision cycle has produced successful CI stages for Maven verification and the structural/domain-boundary checks. The workflow also includes Docker health verification.
 
 Fresh-clone evidence still needs to be captured in an environment with Git, network access, and Docker installed.
 
