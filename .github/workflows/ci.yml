@@ -20,8 +20,43 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Enforce FlowForge domain boundary
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      - name: Enforce module dependency direction
+        shell: bash
         run: |
+          set -euo pipefail
+          if grep -n 'voltops-reference' flowforge-engine/pom.xml; then
+            echo 'flowforge-engine must not depend on voltops-reference.'
+            exit 1
+          fi
+          if ! grep -n 'flowforge-engine' voltops-reference/pom.xml; then
+            echo 'voltops-reference must depend on flowforge-engine.'
+            exit 1
+          fi
+          if ! grep -n 'flowforge-engine' flowforge-application/pom.xml || ! grep -n 'voltops-reference' flowforge-application/pom.xml; then
+            echo 'flowforge-application must depend on both library modules.'
+            exit 1
+          fi
+
+      - name: Enforce executable boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Rni 'spring-boot-maven-plugin' flowforge-engine/pom.xml voltops-reference/pom.xml; then
+            echo 'Reusable library modules must not package executable Spring Boot applications.'
+            exit 1
+          fi
+          if ! grep -Rni 'spring-boot-maven-plugin' flowforge-application/pom.xml; then
+            echo 'flowforge-application must own the Spring Boot packaging plugin.'
+            exit 1
+          fi
+
+      - name: Enforce FlowForge domain boundary
+        shell: bash
+        run: |
+          set -euo pipefail
           if grep -RniE 'transformer|technician|shutdown[ _-]?permit' flowforge-engine \
             --exclude-dir=target --exclude='*.class'; then
             echo 'Domain-specific terms found inside flowforge-engine.'
@@ -29,4 +64,7 @@ jobs:
           fi
 
       - name: Verify build and tests
-        run: mvn -B verify
+        run: ./mvnw -B clean verify
+
+      - name: Verify Docker Compose configuration
+        run: docker compose config -q
