@@ -1,36 +1,44 @@
 # Definition Lifecycle
 
-Workflow definitions have three lifecycle states:
+## State model
 
 ```text
 DRAFT -> PUBLISHED -> RETIRED
-  ^
   |
-DRAFT -> DRAFT
+  +----> DRAFT
 ```
+
+The implemented valid transitions are DRAFT to PUBLISHED and PUBLISHED to RETIRED. A DRAFT remains editable through the update endpoint.
 
 ## DRAFT
 
-A draft can be created and updated. Structural validation runs on create and update so invalid definitions are rejected early.
+Creation stores a workflow definition with status `DRAFT`. Structural validation runs before persistence through `WorkflowDefinitionValidator`.
+
+A DRAFT may be updated. The update service acquires a row lock, verifies the current status, deletes and replaces the child task and dependency records, then commits the replacement inside one transaction.
 
 ## PUBLISHED
 
-Publishing runs full DAG validation before the status changes. After publication:
+Publishing acquires a row lock, reconstructs the definition from PostgreSQL, runs the full validator again, and changes the status only after validation succeeds.
 
-- task definitions cannot be modified
-- dependencies cannot be changed
-- retry-policy configuration cannot be silently changed
-- the `(workflowKey, version)` identity cannot be overwritten
+Once published, the update operation rejects modification with `PUBLISHED_DEFINITION_IMMUTABLE`. The database identity `(workflow_key, version)` cannot be overwritten because PostgreSQL enforces a unique constraint.
 
-Publishing is a database state transition protected by a row lock. Two callers cannot both publish different contents of the same definition version.
+The published row is therefore the immutable definition version future workflow instances will reference.
 
 ## RETIRED
 
-A published definition may be retired. New workflow instances must not select a retired version. Existing future runtime instances remain associated with the immutable version they reference.
+Retirement also acquires a row lock and changes only a PUBLISHED definition to `RETIRED`. A retirement attempt against another state receives `INVALID_DEFINITION_TRANSITION` from the repository.
+
+Retired definitions remain retrievable. Future workflow-instance creation, which is outside Week 2, must exclude retired definitions.
 
 ## Versioning
 
-`UNIQUE(workflow_key, version)` is enforced by PostgreSQL. Application validation provides a friendly error, but the database constraint is the final concurrency guard.
+PostgreSQL enforces:
+
+```text
+UNIQUE(workflow_key, version)
+```
+
+Application code also converts a duplicate insert into `WORKFLOW_VERSION_EXISTS`. This matters for concurrency because two requests can pass Java validation before either reaches the database. The unique constraint is the final guard.
 
 Example:
 
@@ -40,16 +48,20 @@ version 1 = PUBLISHED
 version 2 = DRAFT
 ```
 
-Version 2 is a separate `workflow_definition` row. Publishing version 2 does not change version 1.
+Version 2 is a separate `workflow_definition` row with separate task, dependency, and retry-policy records.
 
 ## Transaction rules
 
-Definition creation stores the workflow row, retry policies, task definitions, and dependency edges inside one transaction.
+Definition creation is transactional. The workflow header, retry policies, task definitions, and dependency edges are inserted within one transaction. A failure during child insertion causes the transaction to roll back.
 
-Definition update locks the draft, replaces its child definition records, and commits the replacement atomically.
+Draft replacement is also transactional. Existing dependency and task rows are replaced before the new child records are inserted. This prevents a partial update from becoming visible as a committed definition.
 
-If any insert fails, the transaction rolls back so a definition cannot exist with only part of its tasks or dependencies.
+## Database constraints versus Java validation
 
-## Database versus Java validation
+Java validation provides domain-specific errors before persistence. PostgreSQL constraints still enforce invariants at the storage boundary. Current examples include positive versions, valid lifecycle status, positive timeouts, retry-policy ranges, unique workflow versions, unique task keys, unique dependency edges, same-workflow dependency endpoints, and no self-dependency.
 
-Java validation provides immediate domain-specific error messages. PostgreSQL constraints remain necessary because concurrent requests, direct SQL, application bugs, and future code paths can bypass Java-level assumptions.
+This two-layer design protects the model from concurrent requests and from future code paths or direct SQL that bypass Java validation.
+
+## Known implementation detail
+
+Retry policies are separate rows referenced by task definitions, but the current schema does not give a retry policy its own version number. Updating a DRAFT creates new retry-policy rows for its replacement task definitions. Superseded rows are not deleted by the current replacement code, so retention or cleanup remains a later design task.
