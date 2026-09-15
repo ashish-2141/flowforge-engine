@@ -9,14 +9,8 @@ This document records the Week 1 repository and development-environment baseline
 ```text
 flowforge-engine/
 ├── flowforge-engine/          # reusable domain-independent engine library
-│   ├── pom.xml
-│   └── src/main/java/...
 ├── voltops-reference/         # domain-specific reference library / adapter
-│   ├── pom.xml
-│   └── src/main/java/...
 ├── flowforge-application/     # sole executable Spring Boot application
-│   ├── pom.xml
-│   └── src/main/java/...
 ├── docs/                      # Week 1 design and defence documents
 ├── .github/workflows/         # CI and boundary checks
 ├── docker-compose.yml         # PostgreSQL and RabbitMQ
@@ -28,11 +22,11 @@ flowforge-engine/
 
 ## Module separation
 
-The root Maven project declares three modules:
+The root Maven project has three modules:
 
-- `flowforge-engine`: reusable, domain-independent orchestration library. It has no Spring Boot executable entry point.
-- `voltops-reference`: domain-specific reference workflows and adapters. It depends on `flowforge-engine` and has no independent executable entry point.
-- `flowforge-application`: sole executable Spring Boot application. It depends on both library modules.
+- `flowforge-engine`: reusable domain-independent orchestration library, no executable Spring Boot entry point.
+- `voltops-reference`: domain-specific workflow library/adapter, no independent executable entry point.
+- `flowforge-application`: sole executable Spring Boot application, depending on both libraries.
 
 Dependency direction:
 
@@ -73,14 +67,9 @@ Only `flowforge-application` uses the Spring Boot Maven packaging plugin.
 
 ## Supporting services
 
-Docker Compose provides:
+Docker Compose provides PostgreSQL for durable orchestration state and RabbitMQ for asynchronous workflow/domain events. RabbitMQ does not grant task ownership. PostgreSQL-backed API polling owns task acquisition.
 
-- PostgreSQL for durable orchestration state.
-- RabbitMQ for asynchronous workflow and domain events.
-
-RabbitMQ does not grant task ownership. Workers acquire work through capability-based API polling backed by PostgreSQL.
-
-PostgreSQL and RabbitMQ both have health checks.
+Both services have health checks.
 
 ## Clean-clone verification
 
@@ -90,21 +79,16 @@ From a fresh clone:
 ./mvnw clean verify
 docker compose up -d --wait
 docker compose ps
+docker compose down -v
 ```
 
-The Maven wrapper uses an installed Maven binary when present and otherwise bootstraps Maven 3.9.9.
-
-Run the application with:
+Run the executable application with:
 
 ```bash
 ./mvnw -pl flowforge-application spring-boot:run
 ```
 
-Stop dependencies with:
-
-```bash
-docker compose down -v
-```
+The Maven wrapper uses a system Maven binary when available and otherwise bootstraps Maven 3.9.9.
 
 ## CI verification
 
@@ -112,55 +96,25 @@ GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
 
 CI checks:
 
-1. Java 21 is configured.
-2. Module dependency direction is enforced.
-3. Only `flowforge-application` has the Spring Boot packaging plugin.
-4. `flowforge-engine` is scanned for forbidden electrical-domain terms.
-5. `./mvnw -B clean verify` runs the build and tests.
-6. Docker Compose starts with `--wait` so configured health checks must pass.
-7. Container state is displayed with `docker compose ps`.
-8. Dependencies are cleaned up with `docker compose down -v` even after a failure.
+1. Java 21 setup.
+2. Maven module dependency direction.
+3. Executable-module boundary.
+4. Forbidden electrical-domain terms inside `flowforge-engine`.
+5. `./mvnw -B clean verify`.
+6. Docker Compose startup with `--wait`.
+7. Container health output.
+8. Cleanup with `docker compose down -v`.
 
 ## Evidence status
 
-The revision includes the repository-side evidence mechanisms requested by the review checklist:
+The repository now contains the review-requested evidence mechanisms: three-module Maven structure, executable Maven wrapper, module and executable-boundary checks, forbidden-term enforcement, full Maven verification, Docker health checks, explicit Week 1 exclusions, and a design-defence guide.
 
-- three-module Maven structure
-- executable Maven wrapper
-- module dependency-direction check
-- executable-boundary check
-- forbidden-domain-term check
-- full `clean verify` build
-- Docker health checks and CI startup validation
-- explicit Week 1 scope exclusions
-- separate design-defence guide
+Fresh-clone execution still needs to be performed in an environment with Docker and outbound network access. The current execution environment cannot perform an external Git clone.
 
-The fresh-clone command and Docker startup must still be run in an environment with Docker and outbound network access. The current model environment cannot perform that external clone itself.
-
-The repository has a reviewable commit history with separate documentation, CI, infrastructure, and architecture/module-structure changes.
+The repository history contains separate documentation, CI, infrastructure, and module-structure commits for review.
 
 ## Week 1 scope boundary
 
-Included:
+Included: repository bootstrap, three-module Maven structure, Spring Boot application baseline, Docker Compose, README/setup instructions, the seven required Week 1 deliverables, design-defence material, and CI checks.
 
-- Git repository
-- three-module Maven structure
-- Spring Boot application baseline
-- Docker Compose
-- README and setup instructions
-- seven Week 1 deliverables
-- design-defence guide
-- CI boundary and build checks
-
-Excluded:
-
-- production task execution
-- worker lease implementation
-- retry implementation
-- production outbox publishing
-- frontend dashboard
-- metrics infrastructure
-- Kubernetes deployment
-- cloud deployment
-
-Implementation remains behind the design-review gate.
+Excluded: production task execution, worker lease implementation, retry implementation, production outbox publishing, frontend dashboard, metrics infrastructure, Kubernetes, and cloud deployment.
