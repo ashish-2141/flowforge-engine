@@ -17,7 +17,7 @@ flowforge-engine/
 ├── flowforge-application/     # sole executable Spring Boot application
 │   ├── pom.xml
 │   └── src/main/java/...
-├── docs/                      # Week 1 design documents
+├── docs/                      # Week 1 design and defence documents
 ├── .github/workflows/         # CI and boundary checks
 ├── docker-compose.yml         # PostgreSQL and RabbitMQ
 ├── mvnw                       # portable Maven wrapper
@@ -32,7 +32,7 @@ The root Maven project declares three modules:
 
 - `flowforge-engine`: reusable, domain-independent orchestration library. It has no Spring Boot executable entry point.
 - `voltops-reference`: domain-specific reference workflows and adapters. It depends on `flowforge-engine` and has no independent executable entry point.
-- `flowforge-application`: the sole executable Spring Boot application. It depends on both library modules.
+- `flowforge-application`: sole executable Spring Boot application. It depends on both library modules.
 
 Dependency direction:
 
@@ -44,11 +44,11 @@ flowforge-application -----> flowforge-engine
         +--------------------> voltops-reference
 ```
 
-The engine module must never depend on VoltOps.
+`flowforge-engine` must never depend on VoltOps.
 
 ## Deployment model
 
-The initial design is a modular monolith:
+The initial deployment is a modular monolith:
 
 ```text
 flowforge-application
@@ -61,13 +61,13 @@ worker-2 -----> flowforge-application
 worker-3 -----> flowforge-application
 ```
 
-There is one executable Spring Boot process. Workers remain separate processes because task execution is distributed. VoltOps is loaded as a domain library/adapter, not deployed as a second application.
+There is one executable Spring Boot process. Workers remain separate processes because execution is distributed. VoltOps is a domain library/adapter, not a second executable application.
 
 ## Spring Boot baseline
 
 - Java 21
 - Spring Boot 4.1.1
-- Maven 3.9.9 through the repository wrapper
+- Maven 3.9.9 through `mvnw`
 
 Only `flowforge-application` uses the Spring Boot Maven packaging plugin.
 
@@ -78,11 +78,11 @@ Docker Compose provides:
 - PostgreSQL for durable orchestration state.
 - RabbitMQ for asynchronous workflow and domain events.
 
-RabbitMQ is not the task-ownership mechanism. Workers acquire ownership through capability-based API polling backed by PostgreSQL.
+RabbitMQ does not grant task ownership. Workers acquire work through capability-based API polling backed by PostgreSQL.
 
-Both services have health checks.
+PostgreSQL and RabbitMQ both have health checks.
 
-## Local clean-clone verification
+## Clean-clone verification
 
 From a fresh clone:
 
@@ -92,7 +92,7 @@ docker compose up -d --wait
 docker compose ps
 ```
 
-The Maven wrapper has executable mode in Git. It uses an installed Maven binary when present and otherwise bootstraps Maven 3.9.9.
+The Maven wrapper falls back to Maven 3.9.9 when a system Maven binary is unavailable.
 
 Run the application with:
 
@@ -116,37 +116,30 @@ CI checks:
 2. Module dependency direction is enforced.
 3. Only `flowforge-application` has the Spring Boot packaging plugin.
 4. `flowforge-engine` is scanned for forbidden electrical-domain terms.
-5. `./mvnw -B clean verify` runs the multi-module build and tests.
-6. Docker Compose starts with `--wait` and health status is displayed.
-7. Docker Compose is torn down even after failures.
+5. `./mvnw -B clean verify` runs the build and tests.
+6. Docker Compose starts with `--wait` so configured health checks must pass.
+7. Container state is displayed with `docker compose ps`.
+8. Dependencies are cleaned up with `docker compose down -v` even after a failure.
 
-## Review evidence
+## Current evidence
 
-The design-review checklist asks for clean-clone build evidence, healthy supporting services, CI execution, module-dependency enforcement, forbidden-term enforcement, meaningful history, and proof that production orchestration logic has not started.
+The latest CI run has passed the Maven verification phase plus module dependency, executable-boundary, and FlowForge domain-boundary checks. The infrastructure-health portion is executed afterward.
 
-Repository evidence now includes:
+Local clean-clone evidence should be captured from a real fresh checkout because the execution environment used for design work does not have outbound Git access. The repository itself contains the wrapper, CI checks, and health-check configuration needed for that verification.
 
-- three-module Maven structure
-- executable wrapper
-- CI module-dependency check
-- CI executable-boundary check
-- CI forbidden-domain-term check
-- CI `clean verify`
-- Docker health checks and CI startup verification
-- explicit Week 1 scope exclusions
-
-The exact CI run URL and local command output should be attached to the design-review notes after the current revision's CI run completes.
+The commit history contains separate changes for documentation, CI, infrastructure, and the module-structure refactor, providing a reviewable implementation trail.
 
 ## Week 1 scope boundary
 
 Included:
 
 - Git repository
-- Maven multi-module structure
+- three-module Maven structure
 - Spring Boot application baseline
 - Docker Compose
 - README and setup instructions
-- seven Week 1 design/bootstrap artifacts
+- seven Week 1 deliverables
+- design-defence guide
 - CI boundary and build checks
 
 Excluded:
