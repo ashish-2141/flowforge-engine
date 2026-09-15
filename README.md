@@ -4,13 +4,15 @@ Fault-tolerant distributed workflow orchestration platform built with Java 21 an
 
 FlowForge is a domain-independent orchestration engine. VoltOps is a domain-specific reference module used to demonstrate FlowForge with an outage-aware electrical-maintenance workflow.
 
-## Week 1 status
+## Current milestone: Week 2
 
-Week 1 is a discovery and system-design phase. Production workflow execution is intentionally not implemented.
+Week 2 implements the workflow-definition layer. The system accepts definition requests, validates task dependencies as a DAG, persists valid versioned definitions in PostgreSQL, and exposes lifecycle APIs.
 
-The design focuses on durable state, atomic task claiming, worker sessions, leases, fencing generations, idempotency, retry semantics, transactional outbox delivery, and restart recovery.
+Workflow execution, workers, leases, retries, fencing-token execution, outbox publishing, workflow instances, and VoltOps business logic remain out of scope.
 
-## Deliverables
+## Documentation
+
+### Week 1
 
 1. [Problem discovery](docs/01-problem-discovery.md)
 2. [Initial architecture proposal](docs/02-architecture-proposal.md)
@@ -20,7 +22,15 @@ The design focuses on durable state, atomic task claiming, worker sessions, leas
 6. [Technology decision note](docs/06-technology-decisions.md)
 7. [Repository bootstrap](docs/07-repository-bootstrap.md)
 8. [Design defence guide](docs/08-design-defence.md)
-9. [Review evidence pack](docs/09-review-evidence.md)
+9. [Week 1 review evidence](docs/09-review-evidence.md)
+
+### Week 2
+
+10. [Workflow definition format](docs/workflow-definition-format.md)
+11. [DAG validation](docs/dag-validation.md)
+12. [Definition lifecycle](docs/definition-lifecycle.md)
+13. [API contract](docs/api-contract.md)
+14. [Week 2 review](docs/week-02-review.md)
 
 ## Repository structure
 
@@ -30,74 +40,80 @@ flowforge-engine/
 ├── voltops-reference/         # domain-specific library / adapter
 ├── flowforge-application/     # sole executable Spring Boot application
 ├── docs/                      # design and review material
-├── .github/workflows/         # CI checks
 ├── docker-compose.yml         # PostgreSQL and RabbitMQ
 ├── mvnw                       # portable Maven wrapper
 ├── pom.xml                    # Maven multi-module parent
 └── README.md
 ```
 
-## Deployment model
-
-The initial architecture is a modular monolith with one executable Spring Boot process. Workers remain separate processes.
+## Week 2 architecture boundary
 
 ```text
+Workflow Client
+      |
+      v
 flowforge-application
-    |\
-    | +--> PostgreSQL
-    |
-    +----> RabbitMQ
-
-worker-1 -----> flowforge-application
-worker-2 -----> flowforge-application
-worker-3 -----> flowforge-application
+      |
+      +---- PostgreSQL
+      |
+      +---- flowforge-engine validator
 ```
 
-`flowforge-engine` is a reusable library. `voltops-reference` is a domain library/adapter. `flowforge-application` is the sole executable module.
+RabbitMQ is not used for definition persistence or task ownership. It remains reserved for the asynchronous event path planned for later runtime work.
 
-## Design boundary
+## Definition APIs
 
-The engine owns domain-independent orchestration semantics such as workflow definitions, task definitions and instances, dependency validation, worker sessions, leases, fencing, retries, idempotency, outbox records, and recovery.
+```text
+POST /api/v1/workflow-definitions
+PUT  /api/v1/workflow-definitions/{workflowKey}/versions/{version}
+POST /api/v1/workflow-definitions/{workflowKey}/versions/{version}/publish
+GET  /api/v1/workflow-definitions/{workflowKey}/versions/{version}
+GET  /api/v1/workflow-definitions/{workflowKey}/versions
+POST /api/v1/workflow-definitions/{workflowKey}/versions/{version}/retire
+```
 
-VoltOps owns electrical-maintenance concepts and remains outside the reusable engine module.
+Definitions use immutable `(workflowKey, version)` identities. Drafts are editable. Published definitions are immutable. Retired versions remain retrievable.
 
-The engine module must not contain electrical-domain terms. CI enforces this boundary.
+## DAG validation
 
-## Ownership model
+The engine validates:
 
-Workers acquire tasks through capability-based API polling backed by PostgreSQL.
+- missing or blank workflow fields
+- duplicate task keys
+- unsupported task types
+- invalid timeouts
+- invalid retry policies
+- missing dependencies
+- self-dependencies
+- duplicate dependency edges
+- direct, two-task, and indirect cycles
+- documented safety limits
 
-RabbitMQ is not the ownership mechanism. It carries asynchronous workflow and domain events after durable state changes.
+Cycle detection uses Kahn's topological-sort test and an iterative DFS for a useful cycle path. The algorithm is O(V + E) time and O(V + E) space.
 
-A task result is accepted only when task ID, worker session ID, lease ID, fencing generation, current task state, and lease validity match current durable ownership.
+## Local development
 
-## Failure model
-
-The design explicitly handles concurrent claims, worker failure, lease expiry and reassignment, stale worker results, duplicate delivery, uncertain external effects, outbox crash windows, broker unavailability, orchestrator restart, timeout, retry exhaustion, and concurrent recovery schedulers.
-
-## Technology
-
-- Java 21
-- Spring Boot 4.1.1
-- Maven 3.9.9
-- PostgreSQL
-- RabbitMQ
-- Docker Compose
-
-## Run locally
+Start PostgreSQL and RabbitMQ:
 
 ```bash
-./mvnw clean verify
 docker compose up -d --wait
 ```
 
-Run the executable application with:
+Run all unit and PostgreSQL/Testcontainers integration tests:
+
+```bash
+./mvnw clean verify
+```
+
+Run the application:
 
 ```bash
 ./mvnw -pl flowforge-application spring-boot:run
 ```
 
-Stop supporting services with:
+The API listens on port 8080 by default.
+
+Stop supporting services:
 
 ```bash
 docker compose down -v
@@ -107,34 +123,11 @@ docker compose down -v
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
 
-CI performs Java 21 setup, module dependency-direction enforcement, executable-boundary enforcement, forbidden-domain-term checks, full Maven verification, Docker Compose health verification, and cleanup.
+CI checks Java 21, Maven module dependency direction, executable-module boundaries, the FlowForge domain boundary, full Maven tests, PostgreSQL-backed Testcontainers tests, Docker Compose health, and cleanup.
 
-## Current validation
+## Week 2 exit target
 
-The latest successful CI run verifies a clean repository checkout, the three-module Maven structure, the reusable/executable module boundaries, the FlowForge domain boundary, `./mvnw -B clean verify`, and PostgreSQL/RabbitMQ health.
-
-The latest Maven reactor passed:
-
-```text
-FlowForge Platform       SUCCESS
-FlowForge Engine         SUCCESS
-VoltOps Reference        SUCCESS
-FlowForge Application    SUCCESS
-```
-
-No production orchestration tests exist yet because Week 1 explicitly defers implementation. The CI workflow therefore validates the repository baseline and currently reports no tests to run.
-
-See [the review evidence pack](docs/09-review-evidence.md) for the exact verification commands and proof points.
-
-## Week 1 scope
-
-Week 1 excludes production task execution, worker lease implementation, retry implementation, production outbox publishing, frontend dashboard, metrics infrastructure, Kubernetes, and cloud deployment.
-
-Implementation begins only after the design-review gate is approved.
-
-## Review preparation
-
-Use [the design defence guide](docs/08-design-defence.md) for the closed-book review. Be prepared to explain task claiming, lease expiry, fencing, duplicate delivery, external side effects, outbox crash windows, concurrent recovery, definition-versus-instance modeling, timeout handling, cancellation, and the PostgreSQL/RabbitMQ responsibility boundary.
+The milestone is complete when the repository demonstrates valid definition persistence, all required definition and DAG rejections, draft update, publication immutability, independent version creation, PostgreSQL integration tests, consistent error responses, and no premature workflow execution logic.
 
 ## License
 
