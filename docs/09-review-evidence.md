@@ -39,19 +39,19 @@ CI verifies that only `flowforge-application` owns the Spring Boot Maven packagi
 
 ### Build verification
 
-The latest GitHub Actions run on 2026-09-15 completed successfully.
+Historical successful verification is recorded as `CI #49` on commit `b63797eff89f1ceccf33dbabdafaf5c24ab8621f`.
 
-Run: `CI #49`
+A later CI run on the previous main revision failed during application compilation because the dependency-mapping query used an ambiguous JdbcTemplate lambda. The audit fix adds an explicit RowCallbackHandler. Current verification must come from the new post-fix CI run.
 
-Commit: `b63797eff89f1ceccf33dbabdafaf5c24ab8621f`
-
-The workflow performed a clean repository checkout, module-boundary checks, domain-boundary checks, and:
+The workflow performs a clean repository checkout, module-boundary checks, domain-boundary checks, and:
 
 ```bash
 ./mvnw -B clean verify
 ```
 
-The Maven reactor verified all four projects:
+The historical CI run verified all four projects. The post-fix run must be used as the current verification record.
+
+The Maven reactor is expected to verify all four projects:
 
 ```text
 FlowForge Platform       SUCCESS
@@ -64,7 +64,7 @@ At Week 1 there are no production execution tests yet, so `verify` reports no te
 
 ### Docker verification
 
-The same CI run executed:
+Historical CI also executed the Docker health checks. The post-fix CI run must be used for the current Docker health evidence.
 
 ```bash
 docker compose up -d --wait
@@ -72,7 +72,7 @@ docker compose ps
 docker compose down -v
 ```
 
-PostgreSQL and RabbitMQ both reached `healthy` status before the health verification step completed.
+PostgreSQL and RabbitMQ reached `healthy` status in the historical verification. Record the same result from the current post-fix run before the Week 2 checkpoint is marked fully verified.
 
 ### Maven wrapper
 
