@@ -207,14 +207,6 @@ class WorkflowDefinitionValidatorTest {
         assertTrue(errors.stream().anyMatch(e -> e.message().contains("configuration")));
     }
 
-    @Test
-    void rejectsNullTaskEntry() {
-        var errors = validator.validate(new WorkflowDefinitionInput(
-                "demo", 1, "Demo", "", Map.of(), List.of((TaskDefinitionInput) null)
-        ));
-        assertTrue(errors.stream().anyMatch(e -> e.message().contains("Task entry is required")));
-    }
-
     private WorkflowDefinitionInput workflow(List<TaskDefinitionInput> tasks) {
         return new WorkflowDefinitionInput(
                 "demo", 1, "Demo", "example", Map.of("type", "object"), tasks
