@@ -16,8 +16,8 @@ Workflow execution, workers, leases, retries, fencing-token execution, outbox pu
 
 1. [Problem discovery](docs/01-problem-discovery.md)
 2. [Initial architecture proposal](docs/02-architecture-proposal.md)
-3. [Initial data-model proposal](docs/03-data-model-proposal.md)
-4. [Workflow and task state-machine proposal](docs/04-state-machine-proposal.md)
+3. [Initial data-model proposal](docs/03-data-model.md)
+4. [Workflow and task state-machine proposal](docs/04-state-machine.md)
 5. [Failure analysis](docs/05-failure-analysis.md)
 6. [Technology decision note](docs/06-technology-decisions.md)
 7. [Repository bootstrap](docs/07-repository-bootstrap.md)
@@ -123,7 +123,7 @@ docker compose down -v
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
 
-CI checks Java 21, Maven module dependency direction, executable-module boundaries, the FlowForge domain boundary, full Maven tests, PostgreSQL-backed Testcontainers tests, Docker Compose health, and cleanup.
+CI checks Java 21, Maven module dependency direction, executable-module boundaries, the FlowForge domain boundary, full Maven tests, PostgreSQL-backed Testcontainers tests, Docker Compose health, cleanup, and API/validation coverage.
 
 ## Week 2 exit target
 
