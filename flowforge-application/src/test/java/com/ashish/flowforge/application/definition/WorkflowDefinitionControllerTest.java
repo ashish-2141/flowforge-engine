@@ -143,7 +143,9 @@ class WorkflowDefinitionControllerTest {
     void malformedJsonReturns400() throws Exception {
         mvc.perform(post("/api/v1/workflow-definitions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{"workflowKey":"))
+                        .content("""
+                                {"workflowKey":
+                                """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_WORKFLOW_DEFINITION"))
                 .andExpect(jsonPath("$.details").isArray());
