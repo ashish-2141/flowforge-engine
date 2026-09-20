@@ -30,6 +30,7 @@ CREATE TABLE task_definition (
     timeout_seconds INTEGER NOT NULL CHECK (timeout_seconds > 0),
     retry_policy_id UUID NOT NULL REFERENCES retry_policy(retry_policy_id),
     configuration JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (workflow_definition_id, task_key),
     UNIQUE (task_definition_id, workflow_definition_id)
 );
@@ -39,11 +40,20 @@ CREATE TABLE task_dependency (
     task_definition_id UUID NOT NULL,
     depends_on_task_definition_id UUID NOT NULL,
     PRIMARY KEY (workflow_definition_id, task_definition_id, depends_on_task_definition_id),
-    FOREIGN KEY (task_definition_id, workflow_definition_id) REFERENCES task_definition(task_definition_id, workflow_definition_id) ON DELETE CASCADE,
-    FOREIGN KEY (depends_on_task_definition_id, workflow_definition_id) REFERENCES task_definition(task_definition_id, workflow_definition_id) ON DELETE CASCADE,
+    FOREIGN KEY (task_definition_id, workflow_definition_id)
+        REFERENCES task_definition(task_definition_id, workflow_definition_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (depends_on_task_definition_id, workflow_definition_id)
+        REFERENCES task_definition(task_definition_id, workflow_definition_id)
+        ON DELETE CASCADE,
     CHECK (task_definition_id <> depends_on_task_definition_id)
 );
 
-CREATE INDEX idx_workflow_definition_key_status ON workflow_definition(workflow_key, status);
-CREATE INDEX idx_task_definition_workflow ON task_definition(workflow_definition_id);
-CREATE INDEX idx_task_dependency_dependency ON task_dependency(depends_on_task_definition_id);
+CREATE INDEX idx_workflow_definition_key_status
+    ON workflow_definition(workflow_key, status);
+
+CREATE INDEX idx_task_definition_workflow
+    ON task_definition(workflow_definition_id);
+
+CREATE INDEX idx_task_dependency_dependency
+    ON task_dependency(depends_on_task_definition_id);

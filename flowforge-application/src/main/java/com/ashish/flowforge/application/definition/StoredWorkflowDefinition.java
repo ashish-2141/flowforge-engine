@@ -17,6 +17,7 @@ public record StoredWorkflowDefinition(
         OffsetDateTime createdAt,
         OffsetDateTime publishedAt,
         List<StoredTaskDefinition> tasks) {
+
     public record StoredTaskDefinition(
             UUID id,
             String taskKey,
@@ -24,6 +25,7 @@ public record StoredWorkflowDefinition(
             String taskType,
             List<String> requiredCapabilities,
             int timeoutSeconds,
+            OffsetDateTime createdAt,
             RetryPolicyInput retryPolicy,
             Map<String, Object> configuration,
             List<String> dependsOn) {}

@@ -118,7 +118,7 @@ This is the clearest schema-level mismatch and should be fixed if the reviewer e
 
 ### Retry-policy versioning
 
-The assignment defines retry policy fields but does not require a separate version column. The current implementation creates a separate retry-policy row for each stored task definition. There is no retry-policy version field, and draft replacement leaves old policy rows behind. Cleanup or explicit retention rules remain unresolved.
+Each `retry_policy_id` is treated as an immutable policy version. Policy content is never updated in place. A policy change creates a new row and policy identity for future task definitions. Draft replacement now removes the orphaned policy rows belonging to the replaced draft.
 
 ### Full JSON Schema validation
 
@@ -130,7 +130,7 @@ The unit suite explicitly tests self-dependency, a two-task cycle, and an indire
 
 ### Fresh test execution
 
-The repository contains the required tests, but this review did not run Maven tests. A final submission should include a locally or CI-generated passing test result before claiming the Week 2 exit checkpoint is fully demonstrated.
+A fresh repository checkout and a passing post-fix GitHub Actions run are required before the Week 2 checkpoint is described as fully verified.
 
 ### Documentation history
 
@@ -157,6 +157,6 @@ The Week 2 documentation was aligned with the implementation in separate commits
 
 ## Week 2 exit assessment
 
-The codebase contains the core Week 2 implementation and the requested test categories. The remaining submission actions are to address the task `created_at` schema mismatch, strengthen the missing API-level test coverage, and run the complete Maven test suite against PostgreSQL Testcontainers before claiming a fully verified checkpoint.
+The codebase contains the core Week 2 implementation and the requested test categories. The remaining submission action is to record a current green CI run after the audit fixes. The task `created_at` schema mismatch and API-level coverage gaps have been addressed in the audit changes.
 
 The assignment's final review also expects the implementation to be defensible without notes, including why definitions are separate from instances, why published versions are immutable, how cycle detection works, how concurrent version creation is prevented, how partial persistence rolls back, and why PostgreSQL constraints remain necessary alongside Java validation. fileciteturn0file0L332-L345

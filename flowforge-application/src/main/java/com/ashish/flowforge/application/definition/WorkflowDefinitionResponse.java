@@ -24,6 +24,7 @@ public record WorkflowDefinitionResponse(
             String taskType,
             List<String> requiredCapabilities,
             int timeoutSeconds,
+            String createdAt,
             RetryPolicyInput retryPolicy,
             Map<String, Object> configuration,
             List<String> dependsOn) {}
