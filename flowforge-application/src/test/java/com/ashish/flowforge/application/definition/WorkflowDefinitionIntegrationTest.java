@@ -16,6 +16,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -88,15 +89,16 @@ class WorkflowDefinitionIntegrationTest {
     void draftReplacementRemovesOrphanedRetryPolicies() {
         service.createDraft(workflow("policy-cleanup-test", 1));
 
-        int before = jdbc.queryForObject(
-                "SELECT count(*) FROM retry_policy rp " +
-                        "JOIN task_definition td ON td.retry_policy_id=rp.retry_policy_id " +
-                        "JOIN workflow_definition wd ON wd.workflow_definition_id=td.workflow_definition_id " +
-                        "WHERE wd.workflow_key=?",
-                Integer.class,
+        List<UUID> oldPolicyIds = jdbc.query(
+                "SELECT r.retry_policy_id " +
+                        "FROM retry_policy r " +
+                        "JOIN task_definition t ON t.retry_policy_id=r.retry_policy_id " +
+                        "JOIN workflow_definition w ON w.workflow_definition_id=t.workflow_definition_id " +
+                        "WHERE w.workflow_key=?",
+                (rs, n) -> UUID.fromString(rs.getString(1)),
                 "policy-cleanup-test"
         );
-        assertEquals(3, before);
+        assertEquals(3, oldPolicyIds.size());
 
         var replacement = new WorkflowDefinitionInput(
                 "policy-cleanup-test",
@@ -109,23 +111,27 @@ class WorkflowDefinitionIntegrationTest {
 
         service.updateDraft("policy-cleanup-test", 1, replacement);
 
-        int after = jdbc.queryForObject(
-                "SELECT count(*) FROM retry_policy rp " +
-                        "JOIN task_definition td ON td.retry_policy_id=rp.retry_policy_id " +
-                        "JOIN workflow_definition wd ON wd.workflow_definition_id=td.workflow_definition_id " +
-                        "WHERE wd.workflow_key=?",
+        int linkedPolicies = jdbc.queryForObject(
+                "SELECT count(*) " +
+                        "FROM retry_policy r " +
+                        "JOIN task_definition t ON t.retry_policy_id=r.retry_policy_id " +
+                        "JOIN workflow_definition w ON w.workflow_definition_id=t.workflow_definition_id " +
+                        "WHERE w.workflow_key=?",
                 Integer.class,
                 "policy-cleanup-test"
         );
-        assertEquals(1, after);
-        assertEquals(
-                1,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM retry_policy",
-                        Integer.class,
-                        new Object[]{}
-                )
-        );
+        assertEquals(1, linkedPolicies);
+
+        for (UUID oldPolicyId : oldPolicyIds) {
+            assertEquals(
+                    0,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM retry_policy WHERE retry_policy_id=?",
+                            Integer.class,
+                            oldPolicyId
+                    )
+            );
+        }
     }
 
     @Test
