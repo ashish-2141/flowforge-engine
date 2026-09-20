@@ -213,8 +213,8 @@ class WorkflowDefinitionIntegrationTest {
         AtomicInteger successes = new AtomicInteger();
 
         try {
-            List<Future<?>> futures = java.util.stream.IntStream.range(0, 10)
-                    .mapToObj(i -> (Future<?>) pool.submit(() -> {
+            List<Future<Object>> futures = java.util.stream.IntStream.range(0, 10)
+                    .mapToObj(i -> pool.submit((Callable<Object>) () -> {
                         start.await();
                         try {
                             service.createDraft(workflow(key, 1));
