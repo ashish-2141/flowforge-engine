@@ -140,6 +140,16 @@ class WorkflowDefinitionControllerTest {
     }
 
     @Test
+    void malformedJsonReturns400() throws Exception {
+        mvc.perform(post("/api/v1/workflow-definitions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"workflowKey":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_WORKFLOW_DEFINITION"))
+                .andExpect(jsonPath("$.details").isArray());
+    }
+
+    @Test
     void unexpectedExceptionReturnsInternalError() throws Exception {
         when(service.get("document-approval", 1))
                 .thenThrow(new IllegalStateException("boom"));
