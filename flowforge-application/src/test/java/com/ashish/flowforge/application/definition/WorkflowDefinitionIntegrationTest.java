@@ -214,7 +214,7 @@ class WorkflowDefinitionIntegrationTest {
 
         try {
             List<Future<?>> futures = java.util.stream.IntStream.range(0, 10)
-                    .mapToObj(i -> pool.submit(() -> {
+                    .mapToObj(i -> (Future<?>) pool.submit(() -> {
                         start.await();
                         try {
                             service.createDraft(workflow(key, 1));
